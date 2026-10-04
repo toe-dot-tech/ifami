@@ -165,10 +165,22 @@ jobs:
   # 1.88, so the first run of this gate failed on a lie. Reading the number from
   # the manifest means there is one place to change and nothing to forget.
   #
-  # The version is written into the job *name* too, so the required status check
-  # on `main` shows the floor it actually tested rather than a stale one.
+  # The job name is deliberately *not* interpolated with the version. Two reasons,
+  # both learned the hard way:
+  #
+  #   - `steps` is not in the context list for `jobs.<job_id>.name`. Putting
+  #     `${{ steps.floor.outputs.msrv }}` there does not warn; it makes the whole
+  #     workflow file invalid, and GitHub rejects the run before creating a single
+  #     job. Zero jobs, no annotation, no explanation.
+  #   - Even if it worked, a required status check whose name changes when the
+  #     manifest does is a trap. Raise the floor and branch protection is left
+  #     demanding a check that can no longer be produced, so every pull request
+  #     blocks on something invisible.
+  #
+  # So the name is stable and the version goes to the step summary, which is
+  # where someone actually reads it.
   msrv:
-    name: MSRV ${{ steps.floor.outputs.msrv }}
+    name: MSRV floor
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -185,6 +197,14 @@ jobs:
           fi
           echo "declared rust-version: $msrv"
           echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
+          {
+            echo "### MSRV"
+            echo
+            echo "Building and testing on the floor declared in \`Cargo.toml\`: **$msrv**."
+            echo
+            echo "That number is read from the manifest, not hardcoded here, so it"
+            echo "cannot drift from what the crates actually require."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: dtolnay/rust-toolchain@master
         with:

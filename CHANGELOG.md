@@ -82,6 +82,13 @@ tag. There is no third category.
   rather than on a policy change. Both jobs now install a pinned
   `cargo-deny@0.20.2` -- the version this config was validated against -- which
   also removes about three minutes of compiling the tool from each run.
+- The `msrv` job interpolated `steps.floor.outputs.msrv` into its own job `name`,
+  which is not a permitted context there. The effect was not a failed step but a
+  *rejected workflow*: the run completed as a failure having created zero jobs,
+  with no annotation and nothing in the log to explain why. The name is now
+  static and the version goes to the step summary. A required status check whose
+  name changes with the manifest would also break branch protection on the next
+  MSRV bump, demanding a check that no longer exists.
 
 The next three things that matter are in `README.md` under
 [Status](README.md#status).
