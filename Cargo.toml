@@ -24,7 +24,7 @@ tokio-stream = { version = "0.1", default-features = false }
 futures-core = "0.3"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 bytes = "1"
-reqwest = { version = "0.12", default-features = false } # TLS backend added per-crate
+reqwest = { version = "0.13", default-features = false } # TLS backend added per-crate
 url = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
