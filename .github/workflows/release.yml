@@ -46,7 +46,7 @@ jobs:
       dry_run: ${{ steps.flags.outputs.dry_run }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Detect the desktop shell
         id: detect
@@ -108,7 +108,7 @@ jobs:
             binary: ifami
             ext: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -175,7 +175,7 @@ jobs:
     if: github.event_name == 'push' && needs.prepare.outputs.desktop == 'true'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
@@ -218,7 +218,7 @@ jobs:
     if: always() && github.event_name == 'push' && !contains(needs.*.result, 'failure')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: softprops/action-gh-release@v2
         with:
           draft: false
