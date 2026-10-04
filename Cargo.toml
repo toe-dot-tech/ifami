@@ -55,7 +55,7 @@ regex = "1"
 # unauthenticated denial-of-service against any consumer of attacker-supplied
 # XML, and both are fixed only in 0.41.0 or later. Do not relax this without
 # re-reading those two advisories.
-quick-xml = "0.41"
+quick-xml = "0.42"
 clap = { version = "4", features = ["derive"] }
 
 [profile.release]
