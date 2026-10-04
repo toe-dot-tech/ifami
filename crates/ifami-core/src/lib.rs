@@ -44,6 +44,12 @@
 //! ## Example
 //!
 //! ```no_run
+//! # // Gated on the feature that provides `ReqwestClient`. Rustdoc compiles
+//! # // doctests with the same `--cfg feature="..."` flags as the crate, so this
+//! # // example still type-checks when the feature is on and compiles away to
+//! # // nothing when it is off. Without it, `--no-default-features` fails on a
+//! # // documentation example rather than on real code.
+//! # #[cfg(feature = "network")]
 //! # async fn demo() -> Result<(), Box<dyn std::error::Error>> {
 //! use std::sync::Arc;
 //! use ifami_core::download::{Manager, Store};

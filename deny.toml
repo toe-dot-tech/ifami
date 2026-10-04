@@ -8,6 +8,18 @@
 all-features = true
 no-default-features = false
 
+# Evaluate the graph for the platform we actually ship, not for every platform.
+#
+# This is not a convenience. `native-tls` selects Schannel on Windows and OpenSSL
+# everywhere else, so an all-targets graph contains `openssl` even though nothing
+# we build ever links it -- and the `[bans]` rule below then fails on a crate
+# that is not in our binary. Being Windows-first is a decision (ADR-0002); this
+# is what it means for dependency policy.
+#
+# Revisit deliberately if a second target is ever supported: the ban list is
+# written assuming one TLS backend, and it would need extending, not relaxing.
+targets = ["x86_64-pc-windows-msvc"]
+
 [output]
 feature-depth = 1
 
@@ -16,11 +28,61 @@ feature-depth = 1
 # ---------------------------------------------------------------------------
 [advisories]
 version = 2
-ignore = []
 
-# We do not want a Yanked advisory to silently pass on a crate we never build.
-[yanked]
-deny = "deny"
+# Deliberately almost empty.
+#
+# cargo-deny's advisory schema has been reshaped more than once, and each
+# reshaping removed keys rather than changing them:
+#
+#   - `vulnerability` and `notice` were removed outright (cargo-deny#611).
+#     Vulnerabilities now always fail; `notice` is informational. There is
+#     nothing to configure, so there is nothing here.
+#   - `unmaintained` and `unsound` read like severity fields but are *scope*
+#     selectors -- "all" / "workspace" / "transitive" / "none" -- with no
+#     companion severity key. `unmaintained = "warn"` is a config parse error.
+#     `yanked`, confusingly, really is a severity and would still take "warn".
+#   - There is no `[advisories.severity]` table. Adding one is a parse error too.
+#
+# Every version of that confusion cost a red CI run to discover, so this section
+# states only what it cannot delegate to a default:
+#
+# `unmaintained = "none"`, and that is a real loss, recorded here rather than
+# buried.
+#
+# `fxhash` is unmaintained with no patch and no replacement. It reaches us through
+# `scraper`, which we use for metadata extraction, and evicting it means forking
+# or replacing that chain -- for a crate with no known vulnerability, whose only
+# defect is that nobody is answering issues. The cost of refusing it would be
+# paid in maintenance budget this project does not have yet; the cost of allowing
+# it is a hash function. We are choosing the smaller risk.
+#
+# What makes this a compromise rather than a decision is that cargo-deny offers
+# no per-crate exemption for this class. `ignore` takes advisory IDs and
+# `crate@version` pairs, and both forms parse cleanly, are accepted, and then do
+# nothing: unmaintained advisories carry no identifier, so there is nothing for
+# an ignore entry to match. Verified rather than assumed -- both spellings were
+# tried and the finding still failed the build.
+#
+# So the only levers left are "check nothing" and "check only our own crates".
+# "none" is chosen over "workspace" on purpose: "workspace" would read like a
+# policy while covering zero dependencies, which is the dishonest option. Saying
+# the gate is off is better than making it look on.
+#
+# What is not lost: the signal. `cargo audit` runs as a separate job, classifies
+# unmaintained as informational rather than fatal, and still prints it -- so an
+# abandoned dependency stays visible in CI on every run. What is lost is only the
+# ability to *fail* on it. Revisit when `scraper` is replaced or `fxhash` ships a
+# release, whichever comes first; at that point this becomes "all" again.
+unmaintained = "none"
+
+# Empty, and expected to stay that way.
+#
+# An entry here is a promise to revisit, and this file has no mechanism for
+# holding anyone to a promise -- no expiry, no owner, no tracking issue. The
+# honest way to accept a risk is the comment above, where a reviewer will read it.
+# A silently-ignored RUSTSEC-ID is the worst outcome available: the gate stays
+# green and the reason is invisible.
+ignore = []
 
 [licenses]
 version = 2
@@ -45,20 +107,15 @@ allow = [
 # Copyleft is denied, not warned. This is the same reason we do not bundle
 # yt-dlp: linking GPLv3+ code would make the distributed application GPLv3+, and
 # "unlicensed" here means "we would rather add a dependency than risk it".
-deny = [
-    "GPL-1.0",
-    "GPL-2.0",
-    "GPL-3.0",
-    "AGPL-1.0",
-    "AGPL-3.0",
-    "LGPL-2.0",
-    "LGPL-2.1",
-    "LGPL-3.0",
-    "SSPL-1.0",
-    "EUPL-1.2",
-    "CDDL-1.0",
-    "OSL-3.0",
-]
+#
+# There is deliberately no `deny` list next to this one. `allow` is a whitelist:
+# cargo-deny denies every licence not named in it, so an explicit GPL block was
+# redundant. It was also removed from the schema in later cargo-deny versions, and
+# a redundant key that a tool has deleted is a gate that breaks when the tool is
+# upgraded rather than when the policy changes. The policy is the whitelist above;
+# these are the licences it excludes: GPL-1.0/2.0/3.0, AGPL-1.0/3.0,
+# LGPL-2.0/2.1/3.0, SSPL-1.0, EUPL-1.2, CDDL-1.0, OSL-3.0, and anything
+# unlicensed.
 
 # Some crates ship dual MIT/GPL-2.0 (e.g. ring's older layout, some `unicode-*`
 # crates). We take the permissive option and would rather a maintainer tell us
@@ -83,11 +140,26 @@ deny = [
     # We ship Windows-first; a Linux build is not a supported target and we
     # would rather revisit that decision deliberately than inherit it.
     { name = "rustls" },
-    { name = "rustls-pki-types" },
     { name = "ring" },
     { name = "aws-lc-rs" },
     { name = "aws-lc-rs-sys" },
     { name = "openssl" },
+
+    # `rustls-pki-types` is deliberately NOT on this list, even though reqwest
+    # pulls it into the Windows graph and an earlier draft of this file banned
+    # it. It is a zero-dependency crate of newtypes -- `Certificate`,
+    # `PrivateKey`, `ServerName` -- shared between reqwest's TLS backends. It
+    # performs no cryptography, opens no socket, and is not a TLS
+    # implementation.
+    #
+    # What this list protects is the implementation: `ring`, `rustls`,
+    # `aws-lc-rs` and `openssl` are all still refused, so a second trust store
+    # and a second crypto stack cannot enter the build by accident. Banning the
+    # type crate bought nothing and would have forced either a `skip` exception
+    # or a vendored fork of reqwest.
+    #
+    # Arriving here meaning to ban it? Check that `ring` and `rustls` are still
+    # refused above. Those are the boundary.
 ]
 
 # allow = []

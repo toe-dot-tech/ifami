@@ -30,7 +30,7 @@ cd ifami
 cargo build
 ```
 
-Requires stable Rust 1.82 or newer. The toolchain, including the `clippy` and
+Requires stable Rust 1.88 or newer. The toolchain, including the `clippy` and
 `rustfmt` components, is pinned in `rust-toolchain.toml`, so `rustup` installs
 what you need the first time you run a cargo command here. The floor is
 `rust-version` in the root manifest; if the two ever disagree, the manifest is

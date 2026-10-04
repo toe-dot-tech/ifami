@@ -1,7 +1,8 @@
 # The toolchain this repository is developed and tested against.
 #
 # `stable` rather than a pinned version on purpose. We test the floor separately
-# in CI (see the `msrv` job, which builds and tests on 1.82) and we want day-to-day
+# in CI (see the `msrv` job, which reads `rust-version` from the manifest and
+# builds and tests on exactly that) and we want day-to-day
 # development on current stable, because a Clippy lint that fires on a new release
 # is information we want immediately rather than at the next quarterly bump. Pinning
 # a mid version here would mean the lints we run against are lints nobody uses.

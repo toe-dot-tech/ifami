@@ -18,7 +18,7 @@ members = []
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.88"
 license = "Apache-2.0"
 repository = "https://github.com/ifami-media/ifami"
 description = "A private, local-first media fetcher and download manager for media you have the right to download."

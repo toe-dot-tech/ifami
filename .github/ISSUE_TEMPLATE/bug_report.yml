@@ -50,7 +50,7 @@ body:
       options:
         - The desktop app
         - The CLI (`ifami-cli`)
-        - `ifami-core` as a library
+        - "`ifami-core` as a library"
         - Something else
     validations:
       required: true

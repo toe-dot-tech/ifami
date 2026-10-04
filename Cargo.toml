@@ -11,7 +11,18 @@ exclude = ["apps/desktop/src-tauri"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82"
+# 1.88 is not a preference, it is what the graph actually requires.
+#
+# `url` pulls in `idna` -> `idna_adapter` -> the `icu_*` stack, and those crates
+# declare `rust-version = 1.88`. Cargo will refuse to build below a dependency's
+# declared floor, so any number lower than this is a claim the build cannot back.
+#
+# This number was 1.82 and was simply wrong; CI caught it on the first run. The
+# `msrv` job reads this field rather than hardcoding a version, so the two cannot
+# drift apart again. To lower it, the `icu_*` stack has to go first -- which means
+# dropping `url` in favour of hand-rolled parsing, and that is not a trade worth
+# making for a downloader.
+rust-version = "1.88"
 license = "Apache-2.0"
 repository = "https://github.com/toe-dot-tech/ifami"
 description = "A private, local-first media fetcher and download manager for media you have the right to download."
@@ -37,7 +48,14 @@ hex = "0.4"
 tempfile = "3"
 scraper = "0.20"
 regex = "1"
-quick-xml = "0.37"
+# quick-xml parses DASH manifests, which come from a remote origin and are
+# therefore attacker-influenced input. 0.41 is the floor, not a preference:
+# RUSTSEC-2026-0195 (unbounded namespace allocation in `NsReader`) and
+# RUSTSEC-2026-0194 (quadratic duplicate-attribute scanning) are both remote,
+# unauthenticated denial-of-service against any consumer of attacker-supplied
+# XML, and both are fixed only in 0.41.0 or later. Do not relax this without
+# re-reading those two advisories.
+quick-xml = "0.41"
 clap = { version = "4", features = ["derive"] }
 
 [profile.release]

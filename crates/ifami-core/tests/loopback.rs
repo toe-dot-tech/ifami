@@ -10,6 +10,15 @@
 //! dependency we would rather not add), and anything requiring a JS runtime.
 //! Those are the boundaries in `docs/SCOPE.md`.
 
+// The whole file is behind the `network` feature, because the production
+// `ReqwestClient` these tests exist to exercise is itself behind it. Gating the
+// crate rather than each test means `cargo test --no-default-features` still
+// compiles this target, it just contains nothing -- which is what the
+// "ifami-core stays embeddable" CI gate needs to check. An ungated `use` of a
+// feature-gated type would fail to compile, and a host that embeds the engine
+// with its own transport would inherit someone else's test failure.
+#![cfg(feature = "network")]
+
 mod common;
 
 use std::path::{Path, PathBuf};

@@ -10,6 +10,19 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege, stated explicitly rather than inherited.
+#
+# `contents: read` is all any job here needs -- CI checks out the code and never
+# writes to the repository. The one job that needs more says so itself (the
+# cargo-audit job, which posts a check run).
+#
+# This block is load-bearing, not decoration: with no `permissions` key at all,
+# the default token can be read-write depending on repository settings, and
+# `audit-check` fails with "Resource not accessible by integration" when it
+# cannot write a check run. Explicit is better than accidentally sufficient.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
@@ -74,6 +87,12 @@ jobs:
   security:
     name: cargo-audit
     runs-on: ubuntu-latest
+    # `audit-check` publishes its findings as a check run on the commit, which
+    # needs `checks: write`. Scoped to this one job; everything else stays at
+    # read-only.
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -82,6 +101,22 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+  # Both cargo-deny jobs below pin the tool version explicitly instead of letting
+  # an action decide it, and that pin is the whole reason for the structure.
+  #
+  # `EmbarkStudios/cargo-deny-action@v2` fetched 0.16.0 on the first run of this
+  # workflow. Locally, `cargo install cargo-deny` gave 0.20.2. The two disagree
+  # about the *schema*, not just about output format -- 0.20 removed the
+  # `vulnerability` and `notice` severity keys and re-purposed `unmaintained`
+  # into a scope selector, so a config that validates against one is a parse
+  # error against the other. A security gate that fails because its tool was
+  # silently upgraded teaches everyone to re-run it.
+  #
+  # `taiki-e/install-action` installs a pinned prebuilt binary, which also drops
+  # this job from ~3 minutes of compiling cargo-deny from source to a few seconds.
+  #
+  # When bumping: change the version here *and* run `cargo deny check` with that
+  # version locally before merging. Nothing automates this one.
   dependency-policy:
     name: cargo-deny
     runs-on: ubuntu-latest
@@ -89,10 +124,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: EmbarkStudios/cargo-deny-action@v2.0.0
+      - uses: taiki-e/install-action@v1
         with:
-          manifest-path: Cargo.toml
-          command: check
+          tool: cargo-deny@0.20.2
+      - run: cargo deny check
 
   licences:
     name: Licence policy
@@ -101,14 +136,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: EmbarkStudios/cargo-deny-action@v2.0.0
+      - uses: taiki-e/install-action@v1
         with:
-          manifest-path: Cargo.toml
-          command: check licenses
+          tool: cargo-deny@0.20.2
+      - run: cargo deny check licenses
 
       # The whole project is Apache-2.0 and depends on GPLv3+ extraction tools
       # not being linked in. This is a licence-level commitment, so it is
       # asserted rather than documented.
+      #
+      # `cargo deny check licences` cannot catch this one: it inspects declared
+      # licence metadata, and a dependency that vendors a GPL binary rather than
+      # linking it can carry a permissive licence file. So the commitment is
+      # checked directly against the resolved tree.
       - name: No GPL extractor dependencies
         run: |
           set -euo pipefail
@@ -118,15 +158,48 @@ jobs:
           fi
           echo "ok: no GPL extraction tool in the graph"
 
+  # The floor is whatever `rust-version` says in the manifest, read at run time.
+  #
+  # This job used to hardcode 1.82 in four places -- the job name, the
+  # toolchain, and two `cargo +` invocations -- and the manifest's real floor was
+  # 1.88, so the first run of this gate failed on a lie. Reading the number from
+  # the manifest means there is one place to change and nothing to forget.
+  #
+  # The version is written into the job *name* too, so the required status check
+  # on `main` shows the floor it actually tested rather than a stale one.
   msrv:
-    name: MSRV 1.82
+    name: MSRV ${{ steps.floor.outputs.msrv }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.82.0
+
+      - name: Read the declared floor
+        id: floor
+        shell: bash
+        run: |
+          set -euo pipefail
+          msrv=$(sed -nE 's/^rust-version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' Cargo.toml | head -n 1)
+          if [ -z "$msrv" ]; then
+            echo "::error::no rust-version in Cargo.toml -- this gate has nothing to test"
+            exit 1
+          fi
+          echo "declared rust-version: $msrv"
+          echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.floor.outputs.msrv }}
+
       - uses: Swatinem/rust-cache@v2
-      - run: cargo +1.82.0 build --workspace
-      - run: cargo +1.82.0 test --workspace
+        with:
+          key: msrv-${{ steps.floor.outputs.msrv }}
+
+      # `cargo +<version>` rather than a bare `cargo`. `rust-toolchain.toml`
+      # pins `stable`, and a file-based override beats whatever `rustup default`
+      # was set to -- so without the explicit `+`, this job would quietly test
+      # stable and pass forever while proving nothing.
+      - run: cargo +${{ steps.floor.outputs.msrv }} build --workspace
+      - run: cargo +${{ steps.floor.outputs.msrv }} test --workspace
 
   secrets:
     name: No committed secrets

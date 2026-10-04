@@ -59,12 +59,16 @@ apps/desktop/src/brands.js linguist-generated=true
 *.msi binary
 *.nupkg binary
 
-# Lockfiles are diffed by humans on purpose, and a merge conflict in Cargo.lock is
-# resolved by taking either side and re-running the build. Never mark these
-# binary to hide the conflict -- hide nothing. (This is the documented way to say
-# "do not do the thing above", and it is here because `* binary` above is the
-# habit it is meant to interrupt.)
-Cargo.lock -diff linguist-generated=true
+# Cargo.lock is committed, and it is *reviewed*. A dependency bump is a security
+# decision on this project, so the diff has to be legible -- which is why this
+# line does not set `-diff`. An earlier version of this file set it, on the
+# theory that suppressing the diff would reduce merge conflicts. It does, and it
+# does so by making the change unauditable, which is the opposite of what this
+# repository is for.
+#
+# `linguist-generated` is kept, but only to stop a machine-written lockfile from
+# counting toward the language statistics bar.
+Cargo.lock linguist-generated=true
 
 # Diffs we want to be readable when they happen. A queue file is small, plain
 # text, and full of the URLs a user would want to see changed.

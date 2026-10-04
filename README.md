@@ -9,7 +9,7 @@ origin to your disk and nowhere else.
 
 [![CI](https://github.com/toe-dot-tech/ifami/actions/workflows/ci.yml/badge.svg)](https://github.com/toe-dot-tech/ifami/actions/workflows/ci.yml)
 [![Licence: Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-blue.svg)](LICENSE)
-[![MSRV](https://img.shields.io/badge/msrv-1.82-blue.svg)](Cargo.toml)
+[![MSRV](https://img.shields.io/badge/msrv-1.88-blue.svg)](Cargo.toml)
 [![YouTube does not work](https://img.shields.io/badge/YouTube-broken-critical.svg)](#read-this-first-what-ifami-will-not-do-for-you)
 
 [Apache-2.0](LICENSE) · Windows-first · [Scope & limitations](docs/SCOPE.md) ·
@@ -117,9 +117,11 @@ exactly what works and what does not.
   source. They also fail if the client silently restarts instead of resuming,
   which is the failure mode that produces a corrupt file with no error.
 - The reference CLI (`ifami-cli`) works.
-- CI runs eight gates on every push: build, format, Clippy, tests, a release
-  build, "core stays embeddable", `cargo-audit`, `cargo-deny`, licence policy,
-  MSRV 1.82, and a secret scan.
+- CI runs seven jobs on every push: build, format, Clippy, tests and a release
+  build; "core stays embeddable"; `cargo-audit`; `cargo-deny`; licence policy;
+  MSRV; and a secret scan. Six of the seven are policy gates rather than tests.
+  All seven have caught a real defect already — see
+  [CHANGELOG](CHANGELOG.md#unreleased).
 
 ### Not finished, or not verified
 
@@ -135,9 +137,14 @@ exactly what works and what does not.
 - **No TLS test coverage.** The loopback fixture server is plaintext, so the TLS
   path is exercised by nothing.
 - **No fuzzing.** The XML and M3U8 parsers have no fuzz targets. They parse
-  attacker-influenced input and are the most likely place for a real
-  vulnerability to sit. On a project whose entire claim is "we do not do anything
-  you did not ask for", an unbounded parser is the wrong thing to leave.
+  attacker-influenced input and that judgement has already been vindicated the
+  hard way: `cargo-audit` found two remote unauthenticated denial-of-service
+  advisories in `quick-xml`, the DASH parser's dependency, and they are fixed
+  as of this snapshot. That covers *known* advisories in our dependencies. It
+  does not cover the bugs nobody has published yet, which is what fuzzing is
+  for, and on a project whose entire claim is "we do not do anything you did not
+  ask for" an unfuzzed parser is the wrong thing to leave. This is the highest
+  value remaining gap.
 - **Three upload tests are described in comments and not yet written.**
 
 The next three things that matter, in order: the Tauri command layer, fuzz
@@ -220,7 +227,8 @@ JavaScript runtime and a second Chromium for a program whose entire claim is
 
 ## Building
 
-Requires a stable Rust toolchain (1.82 or newer). The pinned toolchain is in
+Requires a stable Rust toolchain (1.88 or newer; see `rust-version` in
+`Cargo.toml`, which is the authority). The pinned toolchain is in
 `rust-toolchain.toml`; `rustup` will read it.
 
 ```sh

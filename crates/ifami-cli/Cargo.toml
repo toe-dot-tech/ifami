@@ -16,7 +16,13 @@ name = "ifami"
 path = "src/main.rs"
 
 [dependencies]
-ifami-core = { path = "../ifami-core" }
+# The `version` is not redundant. Without it this is a path dependency with no
+# version requirement, which cargo-deny classifies as a wildcard and refuses --
+# and it is right to: an unversioned dependency is an unpinned one. Repeating
+# `0.1.0` here looks like something that can drift, but it cannot: cargo fails
+# the build outright if a path dependency's version stops satisfying the
+# requirement. So this is a build-time assertion, not a duplicate to remember.
+ifami-core = { path = "../ifami-core", version = "0.1.0" }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs", "sync", "io-util", "time", "signal"] }
 clap = { workspace = true }
 

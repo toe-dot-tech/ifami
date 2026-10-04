@@ -15,7 +15,75 @@ tag. There is no third category.
 
 ## [Unreleased]
 
-Nothing yet. The next three things that matter are in `README.md` under
+### Security
+
+- **`quick-xml` upgraded 0.37.5 -> 0.41.0.** This closes two remote,
+  unauthenticated denial-of-service advisories in the DASH manifest parser:
+  - [RUSTSEC-2026-0195](https://rustsec.org/advisories/RUSTSEC-2026-0195) —
+    unbounded namespace-declaration allocation in `NsReader`, letting a single
+    crafted start tag force large heap allocations on a remote manifest. Memory
+    exhaustion.
+  - [RUSTSEC-2026-0194](https://rustsec.org/advisories/RUSTSEC-2026-0194) —
+    quadratic run time when checking a start tag for duplicate attribute names,
+    letting one crafted tag pin a CPU core for minutes. CPU exhaustion.
+
+  Both require a hostile or compromised origin serving a `.mpd`. `dash.rs` is
+  exactly that code path. 0.41.0 is the first version that fixes either. No
+  behavioural change to our parser; the API used here was unaffected.
+
+  Found by the `cargo-audit` CI gate, which is the gate earning its keep.
+
+### Fixed
+
+- The declared `rust-version` was **1.82 and was not true**. `url` pulls in
+  `idna` -> `idna_adapter` -> the `icu_*` stack, which declares 1.88. Corrected
+  to 1.88, and the `msrv` CI job now reads the number from `Cargo.toml` instead
+  of hardcoding it in four places -- which is how the two drifted apart in the
+  first place.
+- The `ifami-core stays embeddable` gate failed under `--no-default-features`
+  because the loopback integration tests and one crate-level doctest imported
+  the feature-gated `ReqwestClient`. Both are now gated on `network`, so a host
+  that embeds the engine with its own transport inherits no test failures.
+- `deny.toml` declared a top-level `[yanked]` table, which cargo-deny rejects as
+  an unknown key. It is now the `yanked` field of `[advisories]`, where it
+  belongs.
+- `deny.toml` now evaluates the graph for `x86_64-pc-windows-msvc` rather than
+  every platform. `native-tls` selects OpenSSL off Windows, so the all-platform
+  graph contained a crate the ban list refused -- one that is not in anything we
+  build or ship.
+- CI declared no `permissions`, so `audit-check` could not write its check run
+  and failed for that reason on top of the real one. CI is now `contents: read`
+  by default, with `checks: write` scoped to the audit job alone.
+- `deny.toml` had three further faults that only surfaced once the config
+  finally parsed, all of which would have failed the next run:
+  - `rustls-pki-types` was banned *and* present. It is a zero-dependency crate
+    of newtypes (`Certificate`, `PrivateKey`, `ServerName`) that reqwest shares
+    across its TLS backends; it performs no cryptography and is not a TLS
+    implementation. Unbanned, with `ring`, `rustls`, `aws-lc-rs` and `openssl`
+    still refused -- those are the boundary the ban list exists to hold.
+  - `[advisories]` could not express the intended policy because cargo-deny's
+    schema does not have the knobs it appears to. `unmaintained` is a scope
+    selector, not a severity, and there is no way to exempt an individual crate:
+    both `{ crate = "fxhash" }` and `{ crate = "fxhash@0.2.1" }` parse, are
+    accepted, and then do nothing. Unmaintained checks are now off in this gate
+    and said so plainly. `cargo audit` still reports them as informational on
+    every run, so the signal survives; only the ability to fail on it is gone.
+  - `Cargo.lock` was marked `-diff` in `.gitattributes`, hiding the one diff a
+    dependency bump most needs reviewed. Removed -- including the comment that
+    justified it, which argued for hiding merge conflicts in the very same breath
+    as hiding the diff.
+- `ifami-cli` declared `ifami-core` as a bare path dependency, which cargo-deny
+  correctly classifies as an unpinned wildcard. Now carries `version = "0.1.0"`,
+  which cannot drift: cargo fails the build if a path dependency stops satisfying
+  its requirement.
+- CI pinned cargo-deny through `EmbarkStudios/cargo-deny-action@v2`, which
+  supplied 0.16.0 while a local `cargo install` gave 0.20.2. The two disagree
+  about the config *schema*, so a policy gate could break on a tool upgrade
+  rather than on a policy change. Both jobs now install a pinned
+  `cargo-deny@0.20.2` -- the version this config was validated against -- which
+  also removes about three minutes of compiling the tool from each run.
+
+The next three things that matter are in `README.md` under
 [Status](README.md#status).
 
 ## [0.1.0-alpha.1] - 2026-10-04
@@ -80,7 +148,7 @@ is the largest single piece of remaining work.
   boundary, and a CI gate that fails if a UI framework or a linkable extractor
   appears in the graph.
 - `cargo-deny` for licences, bans and sources; `cargo-audit`; gitleaks; an MSRV
-  job at 1.82.
+  job at the `rust-version` declared in the manifest.
 
 ### Known gaps at this tag
 
