@@ -195,7 +195,7 @@ jobs:
       # commercial CA (or Azure Trusted Signing), which costs money and needs a
       # verified organisation. Cosign below gives you provenance; it does not
       # replace Authenticode and nothing here claims it does.
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Optional. Without them the build still produces installers; they just
