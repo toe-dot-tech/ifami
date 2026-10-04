@@ -1,0 +1,30 @@
+[package]
+name = "ifami-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Reference client for the ifami media fetching engine."
+authors.workspace = true
+readme = "../../README.md"
+keywords = ["download", "cli", "resume", "media"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "ifami"
+path = "src/main.rs"
+
+[dependencies]
+ifami-core = { path = "../ifami-core" }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs", "sync", "io-util", "time", "signal"] }
+clap = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"

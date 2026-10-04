@@ -1,0 +1,39 @@
+# Editor behaviour, for the same reason as .gitattributes: two people should not
+# produce two different files.
+#
+# These declarations duplicate .gitattributes on purpose. .gitattributes governs
+# what Git stores and checks out, which is what keeps history clean. .editorconfig
+# governs what your editor writes before Git ever sees it, which is what keeps the
+# "one trailing space" out of the diff. They agree, and they have to: if they
+# disagree, one of the two is lying and the disagreement shows up as noise.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Rustfmt owns Rust formatting and will fight anything set here. Indent four
+# because that is the language's convention, and set nothing else.
+[*.rs]
+indent_size = 4
+max_line_length = 100
+
+# The verification helper scripts are the one place CRLF is intended, matching
+# .gitattributes.
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
+
+# Markdown: trailing double-space is a line break, not trailing whitespace.
+[*.md]
+trim_trailing_whitespace = false
+
+# Generated. Not ours to format, and a formatter pass over it would be reverted
+# by the next generation run.
+[apps/desktop/src/brands.js]
+insert_final_newline = unset
+trim_trailing_whitespace = unset

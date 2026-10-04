@@ -1,0 +1,104 @@
+# cargo-deny configuration.
+#
+# Ifami's dependency surface is a security boundary, not a convenience. This
+# file is what makes "we have a bounded dependency surface" a claim CI can check
+# rather than a claim anyone has to take on faith.
+
+[graph]
+all-features = true
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+# ---------------------------------------------------------------------------
+# Security advisories
+# ---------------------------------------------------------------------------
+[advisories]
+version = 2
+ignore = []
+
+# We do not want a Yanked advisory to silently pass on a crate we never build.
+[yanked]
+deny = "deny"
+
+[licenses]
+version = 2
+
+# Apache-2.0 for our own work; anything permissive is acceptable for
+# dependencies provided it does not drag in a copyleft obligation.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "BSL-1.0",
+    "MPL-2.0",
+]
+
+# Copyleft is denied, not warned. This is the same reason we do not bundle
+# yt-dlp: linking GPLv3+ code would make the distributed application GPLv3+, and
+# "unlicensed" here means "we would rather add a dependency than risk it".
+deny = [
+    "GPL-1.0",
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-1.0",
+    "AGPL-3.0",
+    "LGPL-2.0",
+    "LGPL-2.1",
+    "LGPL-3.0",
+    "SSPL-1.0",
+    "EUPL-1.2",
+    "CDDL-1.0",
+    "OSL-3.0",
+]
+
+# Some crates ship dual MIT/GPL-2.0 (e.g. ring's older layout, some `unicode-*`
+# crates). We take the permissive option and would rather a maintainer tell us
+# to drop the dependency than discover we shipped copyleft.
+[licenses.private]
+ignore = true
+
+# ---------------------------------------------------------------------------
+# Bans: duplicate and abandoned crates
+# ---------------------------------------------------------------------------
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+deny = [
+    # A second crypto stack. We deliberately use Schannel via `native-tls` so
+    # there is no bundled TLS implementation and no second trust store; if a
+    # transitive dep tries to drag in rustls/ring/aws-lc-rs, the build should
+    # fail here rather than quietly grow a parallel crypto surface.
+    #
+    # `openssl` is denied because `native-tls` selects OpenSSL on non-Windows.
+    # We ship Windows-first; a Linux build is not a supported target and we
+    # would rather revisit that decision deliberately than inherit it.
+    { name = "rustls" },
+    { name = "rustls-pki-types" },
+    { name = "ring" },
+    { name = "aws-lc-rs" },
+    { name = "aws-lc-rs-sys" },
+    { name = "openssl" },
+]
+
+# allow = []
+
+# ---------------------------------------------------------------------------
+# Sources: crates.io and a git dependency are both refused. We want a release
+# to be reproducible from the lockfile, and a git dependency in a transitive
+# tree is not auditable at a pin.
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

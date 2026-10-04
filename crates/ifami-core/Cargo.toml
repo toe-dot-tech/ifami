@@ -1,0 +1,65 @@
+[package]
+name = "ifami-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Media fetching engine for ifami. No UI, no framework, no global state."
+authors.workspace = true
+readme = "../../README.md"
+keywords = ["download", "resume", "media", "hls", "dash"]
+categories = ["multimedia::video"]
+
+[features]
+default = ["network"]
+# Provides the default `reqwest`-backed HttpClient. Disable when embedding
+# ifami-core in a host that supplies its own transport.
+network = ["dep:reqwest"]
+
+[dependencies]
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "fs", "sync", "io-util", "net", "time"] }
+tokio-util = { workspace = true, features = ["io"] }
+tokio-stream = { workspace = true }
+futures-core = { workspace = true }
+futures-util = { workspace = true }
+bytes = { workspace = true }
+url = { workspace = true, features = ["serde"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+scraper = { workspace = true }
+regex = { workspace = true }
+quick-xml = { workspace = true }
+
+# `native-tls` selects Schannel on Windows and OpenSSL elsewhere. We take it
+# deliberately over `rustls-tls`:
+#
+#   * No bundled crypto. Schannel uses the OS trust store, which is also what a
+#     browser uses, so a self-hosted origin behind a corporate TLS-inspecting
+#     proxy validates without the user hunting for a CA bundle to install.
+#   * A TLS fingerprint that is plainly not a browser. `rustls` would give us a
+#     widely recognisable JA3/JA4 that is both a privacy tell and, ironically,
+#     the exact "impersonate a real client" behaviour ADR-0005 refuses on other
+#     grounds. Being identifiable as honest software is the correct posture.
+#   * Smaller dependency surface, which `deny.toml` treats as a boundary.
+reqwest = { workspace = true, optional = true, features = [
+    "stream",
+    "charset",
+    "http2",
+    "native-tls",
+] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "fs", "sync", "io-util", "net", "time"] }
+tempfile = { workspace = true }
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"

@@ -1,0 +1,72 @@
+name: Feature request
+description: Something Ifami should be able to do that it cannot.
+title: "[feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read [`docs/SCOPE.md`](../blob/main/docs/SCOPE.md) first. It is
+        normative, and it is not a wishlist -- it is the boundary. A large share
+        of requests here are for things it rules out on legal or architectural
+        grounds, and those will be closed with a link to the reasoning rather
+        than with an argument.
+
+        Two examples so you can tell quickly whether yours is one of them:
+        bypassing a paywall or DRM, and making YouTube work.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem you are trying to solve
+      description: |
+        Not the feature. What are you actually trying to do, and what do you do
+        today instead? A request described as a solution tends to get closed;
+        the same request described as a problem tends to get a better answer.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What you use today
+      description: Including other tools, if any, and why they do not fit.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the project
+      options:
+        - The desktop app
+        - The CLI (`ifami-cli`)
+        - `ifami-core` as a library
+        - Build, packaging, or CI
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Scope boundary
+      description: |
+        Does this need any of the following? If you are unsure, say so -- that is
+        a useful answer, not a weak one.
+
+        - Circumventing an access control (DRM, paywall, attestation, geo-block)
+        - Executing a site's own JavaScript, or impersonating a browser's TLS fingerprint
+        - A user account, a login, or any per-machine identifier
+        - Bundling or linking an existing extractor such as yt-dlp or ffmpeg
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I read `docs/SCOPE.md` and believe this is inside it.
+        - label: I searched existing issues and discussions for this.
+        - label: I would be willing to contribute the implementation, or at least the tests for it.

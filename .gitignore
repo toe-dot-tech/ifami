@@ -1,0 +1,48 @@
+# Build output.
+#
+# `/target` alone is not enough. `apps/desktop/src-tauri` is its own cargo
+# workspace -- it has to be, because Tauri pins a different dependency graph than
+# the engine and sharing a lockfile between them produces two irreconcilable
+# resolution attempts -- so it gets its own target directory too. `/target`
+# matches exactly one directory at the root and silently misses it.
+target/
+**/*.rs.bk
+
+# Local queue files, if anyone runs the CLI from a checkout. These contain the
+# URLs the user downloaded; they are not ours to publish even accidentally.
+ifami-queue.json
+*.part
+
+# Nothing in this project reads an environment variable, and the intention is to
+# keep it that way. These are here so that a future `.env` is a decision rather
+# than an accident, and so gitleaks has less to do.
+.env
+.env.*
+!.env.example
+
+# Build and test output that is not cargo's.
+coverage/
+*.profraw
+*.profdata
+lcov.info
+npm-debug.log*
+yarn-error.log*
+node_modules/
+apps/desktop/dist/
+
+# Editor and OS noise.
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
+*.swp
+*.swo
+*~
+*.orig
+*.rej
+
+# Merge and patch leftovers. Refusing to be silently ignored is the point: a
+# `.orig` file in a commit is a merge that went wrong, and it should be visible.
+*.patch
+*.diff

@@ -1,0 +1,68 @@
+[package]
+name = "ifami-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Windows desktop shell for Ifami. A thin Tauri host over ifami-core; no logic of its own."
+authors.workspace = true
+
+[workspace]
+# Intentionally its own workspace; see the root Cargo.toml. That means the
+# inherited values have to be restated here rather than pointing at the engine's
+# `--workspace` table, which this crate is excluded from and therefore cannot
+# read.
+members = []
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "Apache-2.0"
+repository = "https://github.com/ifami-media/ifami"
+description = "A private, local-first media fetcher and download manager for media you have the right to download."
+authors = ["Ifami contributors"]
+
+[lib]
+# Tauri v2 builds the app as a library so the same binary can be reused by
+# mobile targets. `cdylib` + `staticlib` is what the scaffold emits; `rlib` is
+# needed so the integration tests below can link it.
+name = "ifami_desktop"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["devtools"] }
+
+# The engine. `network` is on by default and we want it: this is the one binary
+# that actually makes requests.
+ifami-core = { path = "../../../crates/ifami-core" }
+
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+parking_lot = "0.12"
+
+# Clipboard. `arboard` directly rather than a Tauri plugin, because the privacy
+# rule that matters here is "only read the clipboard while our window has focus",
+# and that check has to live in code we own. A plugin would put the decision
+# somewhere we do not, behind a capability file nobody reads at review time.
+arboard = "3"
+
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "macros", "fs", "sync", "io-util", "net", "time"] }
+tempfile = "3"
+
+[features]
+# Enabled by `tauri dev`/`tauri build`. Tauri compiles the frontend itself
+# instead of expecting a pre-built `dist`.
+custom-protocol = ["tauri/custom-protocol"]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"

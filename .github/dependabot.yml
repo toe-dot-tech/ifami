@@ -1,0 +1,66 @@
+# Dependency updates, as a stream of small pull requests rather than a quarterly
+# exercise.
+#
+# The grouping below is not cosmetic. Cargo will produce a single lockfile-wide
+# resolution, so asking for two crates at once means reviewing a diff whose
+# contents you did not choose. Separating them means each pull request is one
+# dependency and one diff.
+#
+# A note on the security posture this implies: we claim a bounded dependency
+# surface (see the design commitments in the README) and that claim is enforced by
+# `cargo deny`, not by this file. Dependabot is how the surface stays current,
+# not what keeps it small.
+version: 2
+
+updates:
+  # The engine and the CLI share one workspace and one lockfile.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      # Security patches on a patched crate do not need review one at a time.
+      cargo-security:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+
+  # The Tauri shell is a separate workspace with a separate lockfile, so it gets
+  # its own stream. This does nothing until `apps/desktop/src-tauri` has a
+  # manifest; until then the directory is absent and the update is skipped.
+  - package-ecosystem: cargo
+    directory: /apps/desktop/src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+
+  # The CI gates are load-bearing -- cargo-deny, cargo-audit, gitleaks and Tauri
+  # all gate the build -- so an action that stops working is a broken repository,
+  # not a stale badge.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      # Pinning an action to one step of the ladder at a time. Actions run with
+      # our token and our repository's write access; a bump is a supply-chain
+      # event, so it should be a reviewable diff rather than a monthly surprise.
+      github-actions-security:
+        applies-to: version-updates
+        update-types: ["patch"]

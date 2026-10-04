@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ifami</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ===================== titlebar ===================== -->
+  <header class="titlebar">
+    <div class="mark">
+      ifami
+      <span class="ver num" id="ver">0.1.0</span>
+    </div>
+
+    <div class="livecount" id="livecount" hidden>
+      <span class="dot-live"></span>
+      <span class="num" id="liven">0</span>
+      <span>downloading</span>
+    </div>
+
+    <div class="spacer"></div>
+
+    <button class="ghost-btn speed-btn" id="btn-speed" title="Test how fast your connection is">
+      <span class="speed-btn-icon" aria-hidden="true">&#9878;</span>
+      <!-- Text is set from `cta.js` at boot. It is repeated here only so the
+           very first paint is not an empty control, and that copy is not the
+           source of truth -- edit SPEED.label, not this. -->
+      <span class="speed-btn-label" id="btn-speed-label">Test your internet speed</span>
+    </button>
+
+    <button class="ghost-btn icon-btn" id="btn-help" title="How ifami works"
+            aria-label="How ifami works">?</button>
+
+    <div class="winctl" id="winctl">
+      <button id="w-min" title="Minimise" aria-label="Minimise">
+        <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button id="w-max" title="Maximise" aria-label="Maximise">
+        <svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button class="close" id="w-close" title="Close" aria-label="Close">
+        <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ======================= queue =======================
+       Four stacked regions, and only the last one scrolls.
+
+       The heading block, the paste bar, the view filter and the column labels
+       are all outside the scroller on purpose. They are the furniture of the
+       list, not part of it: if they scrolled, a long queue would carry its own
+       controls off the top of the window and the filter you are using to find a
+       download would be the first thing to disappear. `#rows` is the list, and
+       `#rows` is what scrolls. -->
+  <main class="queue-pane" id="pane">
+    <!-- Hidden until the first queue snapshot arrives. The queue is async, and
+         painting a welcome screen by default means a reload flashes it for a
+         frame before the real list replaces it. One attribute removes the flash;
+         `render()` unhides it when there is genuinely nothing queued. -->
+    <div class="empty" id="empty" hidden>
+      <!-- The centre of the constellation. Everything here is in normal flow and
+           stays centred; the brand marks are a separate, absolutely placed layer
+           that the narrow layout folds back into a plain row underneath. -->
+      <div class="hero-core">
+        <h1>Paste a link. Get the file.</h1>
+        <p class="empty-lead">
+          Video, music, playlists &mdash; saved straight to your computer. No
+          account, no ads, no daily limit.
+        </p>
+        <button class="primary-btn cta" id="empty-new">Add a download</button>
+        <p class="fine">No account. No ads. Nothing about you leaves this computer.</p>
+        <p class="sites-lead">Supported sites</p>
+      </div>
+
+      <!-- The marks themselves are generated from `brands-ui.js`. Empty in the
+           source on purpose: the logos are data, not markup. -->
+      <div class="hero-scatter" id="sites-slot"></div>
+
+      <p class="sites-shapes">
+        &hellip;or a direct file &mdash; <code>.mp4</code>, <code>.mkv</code>,
+        <code>.mp3</code>, <code>.zip</code> &mdash; an HLS or DASH manifest, or
+        something on your own server.
+      </p>
+    </div>
+
+    <div id="paste-slot" hidden></div>
+
+    <!-- The add bar. Where a modal used to be: asking for one link is a one-line
+         question, and a one-line question does not need a screen. It is inline,
+         above the list and below any clipboard offer, so the queue never moves
+         out from under the user and a freshly added row appears in place. -->
+    <div class="addbar" id="add-slot" hidden
+         title="Direct files, HLS, and DASH streams are supported. ifami will not decrypt protected media or work around sign-in.">
+      <span class="addbar-glyph" aria-hidden="true">+</span>
+      <input id="add-url" type="text" placeholder="Paste a link &mdash; https://&hellip;"
+             autocomplete="off" spellcheck="false" aria-label="Link to download">
+      <div class="addbar-acts">
+        <button class="primary-btn" id="add-go" type="button">Add download</button>
+        <button class="ghost-btn icon-btn" id="add-cancel" type="button"
+                aria-label="Cancel" title="Cancel">&times;</button>
+      </div>
+    </div>
+
+    <!-- The view filter and the queue's own controls, both hard against the right
+         edge. The filter answers "which downloads am I looking at"; the toggle
+         answers "how much room do I want to look at them in". They are the same
+         question asked twice, so they sit together — and neither of them belongs
+         down among the rows, which is where they used to be: the left of this bar
+         was a sentence telling you to use buttons you could already see. -->
+    <div class="toolbar">
+      <div class="spacer"></div>
+      <div class="tabs" role="tablist" id="tabs">
+        <button class="tab" role="tab" data-filter="all"      aria-selected="true">All <span class="n num">0</span></button>
+        <button class="tab" role="tab" data-filter="active"   aria-selected="false">Going now <span class="n num">0</span></button>
+        <button class="tab" role="tab" data-filter="done"     aria-selected="false">Finished <span class="n num">0</span></button>
+        <button class="tab" role="tab" data-filter="problem"  aria-selected="false">Problems <span class="n num">0</span></button>
+      </div>
+      <!-- `hidden`, for the same reason `#empty` has it: the queue is empty on
+           the first painted frame and this control is not offered for an empty
+           queue. Without the attribute it appeared in the toolbar for the one
+           frame before `render()` ran, and clicking it in that frame did nothing
+           at all -- `openQueueFloat` declines an empty queue. `render()` unhides
+           it as soon as there is something to enlarge. -->
+      <button class="ghost-btn expand-btn" id="btn-expand" type="button" hidden
+              aria-expanded="false" aria-controls="queue-float"
+              title="Expand the download list" aria-label="Expand the download list">
+        <svg class="exp-ico" width="13" height="13" viewBox="0 0 12 12" fill="none"
+             stroke="currentColor" stroke-width="1.3" stroke-linecap="square"
+             aria-hidden="true" focusable="false">
+          <path d="M1.5 4.5V1.5h3M10.5 7.5v3h-3M1.6 1.4l3.1 3.2M10.4 10.6l-3.1-3.2"/>
+        </svg>
+        <span class="expand-btn-label">Expand</span>
+      </button>
+    </div>
+
+    <div class="colhead">
+      <span class="label">Download</span>
+      <span class="cols">
+        <span class="label">Saved</span>
+        <span class="label">Speed</span>
+        <span class="label">Left</span>
+      </span>
+      <span class="label actshead">Actions</span>
+    </div>
+
+    <div class="scroller" id="scroller" tabindex="0" role="listbox" aria-label="Download queue">
+      <p class="list-empty" id="list-empty" hidden>No downloads yet.</p>
+      <div id="rows"></div>
+    </div>
+  </main>
+
+  <!-- ==================== expanded queue ====================
+       A panel over the app, at 70% of the window, with its own header and
+       column labels.
+
+       "More room" is worth having: the list in the pane is sized by the window
+       and not by its contents, so adding a download cannot change how tall it
+       is, and the home screen above it keeps its place. That leaves the queue
+       three rows on a laptop -- this is the same queue in a box big enough to
+       see nine, and it leaves the list underneath exactly as it was, which is
+       the property that makes it safe -- if it resized the pane instead,
+       opening it would be the very thing that pushed rows into the header.
+
+       It was briefly a third section under the list instead, taking the space
+       the fixed list left over. Measured, that space is about 170px on a 726px
+       window and 316px on a 900px one: three to six rows, which is not "more
+       room", it is the same room with a second header bolted on. A panel you
+       open and close is worth more than a permanently small one, because the
+       moment it is open the window is not doing anything else.
+
+       No scrim. A scrim says "you are in a dialog now and the window behind is
+       not available", which is true of the speed test and false of this. The
+       window staying lit and legible is what tells you it is a queue you are
+       looking at and not somewhere you have gone.
+
+       `hidden` in the markup, and it was once missing -- this widget shipped
+       without it, so it was painted from the first frame: an empty "Downloads"
+       box with a Close button in the middle of the welcome screen, offering to
+       expand a queue with nothing in it. Every other overlay here is hidden in
+       the markup, which is the only version of "not triggered" that does not
+       depend on JavaScript having run yet. `render()` asserts the visibility
+       from `state.expanded` on every tick as well, so a code path that forgets
+       cannot bring it back. -->
+  <div class="queue-float" id="queue-float" role="dialog" aria-modal="false"
+       aria-label="Downloads, expanded" hidden>
+    <div class="queue-float-head">
+      <span class="label">Downloads</span>
+      <div class="spacer" style="flex:1"></div>
+      <button class="ghost-btn" id="queue-float-close" type="button">Close</button>
+    </div>
+    <div class="colhead float-colhead">
+      <span class="label">Download</span>
+      <span class="cols">
+        <span class="label">Saved</span>
+        <span class="label">Speed</span>
+        <span class="label">Left</span>
+      </span>
+      <span class="label actshead">Actions</span>
+    </div>
+    <div class="queue-float-list" id="queue-float-list" role="listbox" aria-label="Download queue"></div>
+  </div>
+
+  <!-- ===================== detail popup ====================
+       A dialog, not a column. It used to be a docked right-hand pane: a few
+       hundred pixels of permanent furniture that stole width from the queue,
+       and appeared or vanished as you moved through rows, so the window
+       changed shape under the cursor for a question most people ask once.
+
+       As a popup it is what it actually is -- an answer to "what happened to
+       this one?" -- so it takes the window only while it has an answer to give,
+       and the scrim is what tells you it has taken it. It is not in the layout
+       at all when closed, which is the only reliable way to say "not
+       triggered": `hidden` on the scrim, not `display: none` on the contents. -->
+  <div class="scrim" id="detail-scrim" hidden>
+    <div class="sheet detail-sheet" id="detail" role="dialog" aria-modal="true"
+         aria-labelledby="detail-title">
+      <div class="head">
+        <h2 id="detail-title">Details</h2>
+        <div class="spacer" style="flex:1"></div>
+        <button class="ghost-btn" id="detail-close">Close</button>
+      </div>
+      <div class="detail-body" id="detail-body"></div>
+    </div>
+  </div>
+
+  <!-- ====================== statusbar ====================== -->
+  <footer class="statusbar">
+    <span class="num" id="sb-queue">0 queued</span>
+    <span class="num" id="sb-disk">0 B on disk</span>
+    <span class="spacer"></span>
+    <span class="num" id="sb-privacy">No account &middot; no ads &middot; nothing leaves your computer</span>
+    <button class="get-software" id="get-software" type="button">Get the software</button>
+  </footer>
+</div>
+
+<!-- ====================== overlays ========================== -->
+<div class="scrim" id="speed-scrim" hidden>
+  <div class="sheet speed" role="dialog" aria-modal="true" aria-label="Connection speed test">
+    <div class="head">
+      <h2>How fast is your connection?</h2>
+      <div class="spacer" style="flex:1"></div>
+      <button class="ghost-btn" id="btn-speed-close">Close</button>
+    </div>
+
+    <div class="speed-body">
+      <p class="lead" id="speed-lead">
+        ifami measures how fast bytes move, in both directions, the same way it
+        fetches your downloads. Nothing about you is measured &mdash; only the
+        speed of the connection, and the result is never sent anywhere.
+      </p>
+
+      <!-- The instrument. Two lanes over one clock: download in moss on top,
+           upload in fuchsia below, each with its own scale because upload is
+           routinely an order of magnitude slower and one shared axis would
+           flatten it into its own baseline. The line is drawn from a live
+           reading every quarter-second, so the shape between the level averages
+           is the measurement -- not decoration. -->
+      <figure class="scope" id="speed-scope" role="img"
+              aria-label="Download and upload throughput over time">
+        <!-- No preserveAspectRatio. The viewBox is re-fitted to the element's
+             real pixel size by `Scope`, so one unit is one pixel and text is
+             undistorted. Stretching a fixed viewBox instead would scale the
+             axis and the labels by different factors. -->
+        <svg id="speed-svg" aria-hidden="true"></svg>
+        <div class="scope-empty" id="speed-scope-empty">
+          <span class="glyph">&#9878;</span>
+          <p>Press start and watch both directions fill in.</p>
+        </div>
+      </figure>
+
+      <div class="readout">
+        <div class="big">
+          <span class="num" id="speed-now">&mdash;</span>
+          <span class="unit" id="speed-unit">Mbps</span>
+        </div>
+        <dl class="facts">
+          <div><dt>Connections</dt><dd class="num" id="speed-conns">0</dd></div>
+          <div><dt>Upload</dt><dd class="num" id="speed-up">&mdash;</dd></div>
+          <div><dt>Latency</dt><dd class="num" id="speed-idle">&mdash;</dd></div>
+          <div><dt>Jitter</dt><dd class="num" id="speed-jitter">&mdash;</dd></div>
+          <div><dt>Under load</dt><dd class="num" id="speed-loaded">&mdash;</dd></div>
+          <div><dt>Transferred</dt><dd class="num" id="speed-bytes">0 B</dd></div>
+          <div><dt>Testing against</dt><dd class="host num" id="speed-host">&mdash;</dd></div>
+        </dl>
+      </div>
+
+      <p class="hint" id="speed-note"></p>
+
+      <div class="speed-acts">
+        <!-- Both labels come from `cta.js`; the words here are the pre-boot copy. -->
+        <button class="primary-btn" id="speed-start">Test your internet speed</button>
+        <button class="stop-btn" id="speed-stop" hidden>Stop</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="help-scrim" hidden>
+  <div class="sheet help" role="dialog" aria-modal="true" aria-label="Help">
+    <div class="head">
+      <h2>How ifami works</h2>
+      <div class="spacer" style="flex:1"></div>
+      <button class="ghost-btn" id="help-close">Close</button>
+    </div>
+
+    <div class="help-grid">
+      <section>
+        <span class="label">The bar on each row</span>
+        <p>
+          The bar is the file, drawn to scale. The shaded part is what is already
+          saved on your disk. The bright line on the right is the download
+          happening right now.
+        </p>
+        <p>
+          When a connection breaks, ifami notes the exact byte it stopped at and
+          carries on from there, so the marks you see on the bar are where your
+          connection was unreliable.
+        </p>
+        <p>
+          If the site never says how big the file is, the bar is drawn dashed and
+          labelled &ldquo;size unknown&rdquo; rather than guessing.
+        </p>
+      </section>
+
+      <section>
+        <span class="label">Doing things</span>
+        <p>Every download has three buttons on the right:</p>
+        <dl class="keys">
+          <dt><span class="glyph">&#10073;&#10073;</span></dt><dd>pause, or resume if paused</dd>
+          <dt><span class="glyph">&#8801;</span></dt><dd>open details and the activity log</dd>
+          <dt><span class="glyph">&times;</span></dt><dd>remove it, keeping the finished file</dd>
+        </dl>
+        <p>
+          &ldquo;Add download&rdquo; at the top takes a link, and the tabs below it
+          narrow the list to what you care about right now. Everything else you
+          can do to a download is on the row itself.
+        </p>
+      </section>
+
+      <section>
+        <span class="label">If you prefer the keyboard</span>
+        <p class="fine">
+          Entirely optional. Nothing below is required to use ifami, and none of
+          it is advertised in the app &mdash; it is here for you to read once and
+          then forget.
+        </p>
+        <dl class="keys">
+          <dt><span class="kbd">Ctrl</span><span class="kbd">N</span></dt><dd>add a download</dd>
+          <dt><span class="kbd">Space</span></dt><dd>pause or resume</dd>
+          <dt><span class="kbd">&uarr;</span> <span class="kbd">&darr;</span></dt><dd>move selection</dd>
+          <dt><span class="kbd">Enter</span></dt><dd>open details</dd>
+          <dt><span class="kbd">Del</span></dt><dd>remove</dd>
+          <dt><span class="kbd">1</span>&hellip;<span class="kbd">4</span></dt><dd>switch tabs</dd>
+          <dt><span class="kbd">E</span></dt><dd>expand the download list</dd>
+          <dt><span class="kbd">Esc</span></dt><dd>close this</dd>
+        </dl>
+      </section>
+
+      <section>
+        <span class="label">Your privacy</span>
+        <p>
+          ifami has no account, no sign-in, and no advertising. It has no
+          analytics of any kind, and it never asks for an identifier &mdash; not a
+          user id, not a device fingerprint. The only network traffic is the
+          download itself, sent to the server you asked for.
+        </p>
+      </section>
+
+      <section>
+        <span class="label">The clipboard</span>
+        <p>
+          ifami offers you a link the moment you copy it, because that is how a
+          link gets from your browser to a desktop app. While this window is
+          focused it looks at your clipboard to ask one question: is this a
+          link? If it is not, the text is thrown away unread. Nothing is stored,
+          and it does not watch while the window is in the background.
+        </p>
+        <p>
+          The little icon next to the link is fetched from the site you are
+          downloading from &mdash; never from an icon-lookup service, which would
+          mean telling a stranger every site you visit. Sites with no icon just
+          show a letter.
+        </p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div id="tip" hidden></div>
+
+<!-- One line of feedback, bottom-right, pointing at the thing that just
+     happened. Not a dialog: it never takes focus, it never blocks the list, and
+     it leaves on its own. -->
+<div class="snackbar" id="snackbar" role="status" aria-live="polite" hidden></div>
+
+<script type="module" src="src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,237 @@
+# Releases are cut from a tag, never from a branch.
+#
+# `push: tags: v*` is the whole trigger. A release is a commit someone chose to
+# name, and a tag is the only thing in Git that means "this exact tree, this
+# exact version". Building from a branch would let the artefact and the tag
+# disagree, which is the failure mode that makes a checksum file a lie.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and verify everything, but do not publish."
+        type: boolean
+        default: true
+
+# Least privilege, stated explicitly. Every job below needs exactly two things:
+# the ability to write the release, and an OIDC token to sign with. Neither
+# implies anything else, and `permissions: write-all` at the top of a workflow
+# that builds third-party code is how a compromised action becomes a compromised
+# repository.
+permissions:
+  contents: write
+  id-token: write
+
+# One release at a time. Two runs racing to upload to the same tag produces a
+# release whose assets are whichever job finished last, which is worse than a
+# failed run because it looks successful.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Decide what exists. A tag can point at a tree with no Tauri manifest, and a
+  # build step that assumes there is one turns a valid release into a failed one.
+  prepare:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    outputs:
+      desktop: ${{ steps.detect.outputs.desktop }}
+      dry_run: ${{ steps.flags.outputs.dry_run }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect the desktop shell
+        id: detect
+        run: |
+          if [ -f apps/desktop/src-tauri/tauri.conf.json ]; then
+            echo "desktop=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "desktop=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No tauri.conf.json. Releasing the CLI only. This is expected until the desktop shell is finished."
+          fi
+
+      # A tag that disagrees with the manifest is a mistake worth stopping for.
+      # Without this, v0.2.0 could ship binaries whose `--version` says 0.1.0 and
+      # nobody would notice until someone filed a bug about it.
+      - name: Verify the tag matches the manifest
+        id: version
+        run: |
+          set -euo pipefail
+          declared=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*=[[:space:]]*"([^"]+)".*/\1/')
+          tag="${GITHUB_REF_NAME#v}"
+          echo "manifest=$declared tag=$tag"
+          if [ "$declared" != "$tag" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $declared"
+            exit 1
+          fi
+          echo "version=$declared" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve flags
+        id: flags
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------- CLI ----
+  # This works today and is the artefact that is actually usable, because the
+  # desktop shell has no command layer yet.
+  cli:
+    name: CLI (${{ matrix.target }})
+    needs: prepare
+    if: github.event_name == 'push'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            binary: ifami.exe
+            ext: .exe
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            binary: ifami
+            ext: ""
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            binary: ifami
+            ext: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Test on the host toolchain
+        # Test natively, cross-compile the artefact. Testing a cross-compiled
+        # binary needs an emulator, and an emulated test run proves less than a
+        # native one about the platform you are actually shipping.
+        run: cargo test --workspace
+
+      - name: Build
+        run: cargo build -p ifami-cli --release --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          name="ifami-${{ matrix.target }}${{ matrix.ext }}"
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/$name"
+          # The checksum file is named after the binary it covers rather than
+          # written as a wildcard, so `sha256sum -c` works from the release page
+          # without the user having to rename anything.
+          ( cd dist && sha256sum "$name" > "$name.sha256" )
+          ls -l dist
+
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign (keyless)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Keyless: the signing identity is the workflow run itself, attested by
+          # the OIDC token in `permissions` above. There is no long-lived key to
+          # leak, rotate, or scope, which is why there is no secret here at all.
+          #
+          # Only the binary is signed. Signing the checksum file as well would
+          # imply a signature chain that does not exist -- the checksum is not
+          # the artefact, it is a claim about it.
+          for artefact in dist/ifami-*; do
+            case "$artefact" in
+              *.sha256) continue ;;
+            esac
+            cosign sign-blob --yes --bundle "${artefact}.sigstore.json" "$artefact"
+          done
+
+      - name: Upload to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+          draft: true
+
+  # ----------------------------------------------------------- desktop ----
+  # Dormant until the Tauri shell is finished. Gated on the manifest existing so
+  # that it cannot fail a release for a shell we have not written yet, and left
+  # in place so that finishing the shell is a matter of merging code rather than
+  # writing infrastructure.
+  desktop:
+    name: Desktop (Windows)
+    needs: prepare
+    if: github.event_name == 'push' && needs.prepare.outputs.desktop == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Verify the shell before packaging it
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+
+      # `tauri-action` builds the bundle and, when the signing keys are present,
+      # produces the updater artefacts. Those are what make in-app updates
+      # verifiable, and an unsigned updater artefact is an update channel anyone
+      # can write to.
+      #
+      # Note what this is not: Authenticode. Signing the .msi/.exe so Windows
+      # SmartScreen stops warning about it needs a code-signing certificate from a
+      # commercial CA (or Azure Trusted Signing), which costs money and needs a
+      # verified organisation. Cosign below gives you provenance; it does not
+      # replace Authenticode and nothing here claims it does.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional. Without them the build still produces installers; they just
+          # are not updater-signed, and the updater must then be disabled in the
+          # app rather than pointed at unsigned artefacts.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Ifami ${{ needs.prepare.outputs.version }}
+          releaseDraft: true
+          prerelease: true
+
+  # ---------------------------------------------------------- publish ----
+  # One place decides whether a draft becomes a release, so the CLI artefacts and
+  # the desktop bundles cannot disagree about it.
+  publish:
+    name: Publish
+    needs: [prepare, cli, desktop]
+    if: always() && github.event_name == 'push' && !contains(needs.*.result, 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            Alpha software. The scope boundary in `README.md` is normative, and
+            YouTube does not work.
+
+            Verify a download with `cosign verify-blob` against the `.sigstore.json`
+            beside it. The identity is this GitHub Actions run; the transparency
+            log entry is in the bundle.
+
+            These artefacts are **not** Authenticode-signed, so Windows SmartScreen
+            will warn. That requires a commercial code-signing certificate and is
+            tracked separately.

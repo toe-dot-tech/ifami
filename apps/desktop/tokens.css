@@ -1,0 +1,148 @@
+/* ifami desktop — design tokens
+ *
+ * Constraints this file exists to enforce:
+ *   - 8px spatial grid, nothing off-grid
+ *   - exactly one accent hue (slate violet) for *live activity* and focus
+ *   - two further hues that mean *direction* and nothing else, confined to the
+ *     speed dialog: moss is download, fuchsia is upload
+ *   - one semantic error hue, used only for failure glyphs
+ *   - elevation expressed as border weight, never shadow. Three levels, max.
+ *   - light surface only
+ *
+ * If you find yourself wanting a fourth elevation, you want a layout change.
+ *
+ * On the accent ramp, because it looks arbitrary and is not:
+ *
+ *   `--accent` is a literal per-channel midpoint of violet (#6d28d9) and moss
+ *   (#4d7c0f). Those two are complementary, so the midpoint is hue 259.4° at
+ *   only 17% saturation -- a slate violet, quiet rather than loud, which is
+ *   exactly the register this app wants.
+ *
+ *   The other four tokens are NOT averages. Averaging complementary hues
+ *   collapses chroma: the naive midpoint of the two `--hot` values is
+ *   #889486, a grey-green, which would have painted the write head -- the one
+ *   element that must be visible at a glance -- in a colour from the other
+ *   half of the wheel. So each is rebuilt at the midpoint's own hue with the
+ *   chroma the role needs. Same hue throughout, only lightness varies, which
+ *   is what the first rule above actually asks for.
+ */
+
+:root {
+  /* ---- 8px grid -------------------------------------------------- */
+  --u1: 4px;   /* half-step, optical nudges only */
+  --u: 8px;
+  --u2: 16px;
+  --u3: 24px;
+  --u4: 32px;
+  --u6: 48px;
+
+  /* ---- ink: structure is black, not blue ------------------------- */
+  --ink-1: #0e1113;
+  --ink-2: #3b4249;
+  --ink-3: #6c757e;
+  --ink-4: #9aa3ad;
+
+  /* ---- paper: surfaces ------------------------------------------- */
+  --paper-0: #ffffff;   /* window */
+  --paper-1: #fafbfc;   /* recessed wells, detail pane */
+  --paper-2: #f3f5f7;   /* subtle fill: hatches, chips */
+  --paper-3: #e9edf1;   /* hover */
+
+  /* ---- rules: the elevation system ------------------------------- */
+  --rule-1: #e7eaee;    /* hairline: internal dividers */
+  --rule-2: #d8dde3;    /* standard: component bounds */
+  --rule-3: #b6bec8;    /* strong: focus-adjacent, active bounds */
+
+  /* ---- the one accent: slate violet ------------------------------ */
+  /* Same hue throughout. Only lightness varies. This is the live wire:
+     the write head, the resume seam, the focus ring, active text.      */
+  --accent:       #5d5274;
+  --accent-hot:   #6d41c8;   /* the moving head, 8% of the time */
+  --accent-wash:  #f6f4fa;   /* tinted fill behind accent text  */
+  --accent-line:  #d9d1ea;   /* 1px accent rules on paper        */
+  --accent-fill:  #baacd8;   /* bytes that have actually landed  */
+
+  /* ---- the two lanes of the speed instrument --------------------- */
+  /* Only ever used inside the speed dialog, and only ever to say which
+     direction a figure belongs to. They are not accents: nothing outside
+     that dialog may use them, because the moment a hue means two things in
+     two places it means neither. */
+  --down:      #4d7c0f;   /* moss:  download throughput */
+  --down-hot:  #84cc16;
+  --down-wash: #f7fee7;
+  --down-line: #d9f99d;
+  --down-fill: #bef264;
+
+  --up:        #be185d;   /* fuchsia: upload throughput */
+  --up-hot:    #db2777;
+  --up-wash:   #fdf2f8;
+  --up-line:   #fbcfe8;
+  --up-fill:   #f9a8d4;
+
+  /* ---- one semantic error hue, glyph-scale only ------------------ */
+  --bad:      #b4231f;
+  --bad-wash: #fdeceb;
+
+  /* ---- type: tight, technical, tabular --------------------------- */
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, "SF Mono", monospace;
+
+  --t-micro: 11px;  /* uppercase labels, +0.08em tracking */
+  --t-sm:    12px;
+  --t-base:  13px;
+  --t-row:   15px;
+  --t-lg:    19px;
+  --t-hero:  28px;
+
+  --lh-tight: 16px;
+  --lh-base:  20px;
+
+  /* ---- geometry -------------------------------------------------- */
+
+  /* The scrollbar thumb. Its own token rather than a reuse of `--ink-4`,
+     because it has to clear 3:1 against white to satisfy WCAG 1.4.11 -- a
+     control needed in order to tell where you are in a list -- and `--ink-4`
+     is 2.6:1. It sits deliberately below `--ink-3`: a thumb that matched the
+     body text would out-weigh the text, and the text is the content. */
+  --scroll-thumb:       #868f99;
+  --scroll-thumb-hover: #6c757e;
+
+  --titlebar-h: 40px;
+  --statusbar-h: 32px;
+  --row-h: 72px;    /* name line (20+5) + map (20) + meta (16+5) = 66, on a 9-step grid */
+  /* The height the download list is guaranteed, in the window that has a queue in
+   * it. Three rows: two is a list you cannot read a filename in and one is a list
+   * that is a decoration. The home screen's `max-height` is computed from this,
+   * so it is the only place the number is written. */
+  --list-floor: 216px;
+  --map-h: 20px;
+  --rail-w: 16px;
+  --radius: 3px;      /* barely-there. This is not a friendly app. */
+}
+
+/* Windows high-contrast / forced-colors: hand the whole thing back to the
+ * system palette rather than trying to fake our own. */
+@media (forced-colors: active) {
+  :root {
+    --ink-1: CanvasText;
+    --ink-2: CanvasText;
+    --ink-3: GrayText;
+    --ink-4: GrayText;
+    --paper-0: Canvas;
+    --paper-1: Canvas;
+    --paper-2: Canvas;
+    --paper-3: Highlight;
+    --rule-1: CanvasText;
+    --rule-2: CanvasText;
+    --rule-3: CanvasText;
+    --accent: Highlight;
+    --accent-hot: Highlight;
+    --down: Highlight;
+    --down-hot: Highlight;
+    --up: Highlight;
+    --up-hot: Highlight;
+    --scroll-thumb: Highlight;
+    --scroll-thumb-hover: Highlight;
+    --bad: CanvasText;
+  }
+}

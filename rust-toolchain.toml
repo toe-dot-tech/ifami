@@ -1,0 +1,14 @@
+# The toolchain this repository is developed and tested against.
+#
+# `stable` rather than a pinned version on purpose. We test the floor separately
+# in CI (see the `msrv` job, which builds and tests on 1.82) and we want day-to-day
+# development on current stable, because a Clippy lint that fires on a new release
+# is information we want immediately rather than at the next quarterly bump. Pinning
+# a mid version here would mean the lints we run against are lints nobody uses.
+#
+# `rust-version` in the workspace manifest is the authority for the floor. If the
+# two ever disagree, the manifest is what is true and this file is a bug.
+[toolchain]
+channel = "stable"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

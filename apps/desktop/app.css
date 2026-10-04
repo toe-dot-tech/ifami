@@ -1,0 +1,2127 @@
+/* ifami desktop — layout & components
+ *
+ * No shadows anywhere. Elevation is border weight:
+ *   level 0  flat          (no rule)
+ *   level 1  hairline      (--rule-1, internal dividers)
+ *   level 2  standard      (--rule-2, component bounds, detail pane)
+ *   level 3  strong        (--rule-3, hover, dialogs)
+ */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+/* The `hidden` attribute, enforced.
+ *
+ * The browser's own `[hidden] { display: none }` lives in the UA stylesheet, and
+ * any author rule at all outranks it. So the moment something here says
+ * `display: grid` or `display: flex`, `el.hidden = true` stops working -- the
+ * attribute is set, `element.hidden` reads `true`, and the element is on screen
+ * anyway. The failure is invisible in the attribute and shows up as a layout
+ * problem: `.empty { display: grid }` meant "Nothing downloading yet." stayed
+ * rendered, 326px tall, above a list of eight downloads.
+ *
+ * Five separate rules used to paper over this one element at a time, each
+ * written by somebody who had just been bitten and had not noticed the others.
+ * This is the single rule they were all approximating, placed in the reset so
+ * that adding a `display` to a class can never silently break `hidden` again.
+ * `!important` is load-bearing rather than lazy: without it, anything with
+ * higher specificity -- any `#id` rule, any `.a .b` compound -- takes the
+ * element straight back off `display: none`. */
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------ */
+/* scrollbars                                                         */
+/* ------------------------------------------------------------------ */
+
+/* The default is the loudest thing in the window: a 17px bevelled grey slab
+ * with a second grey slab inside it, sitting against a pure-white pane. It is
+ * also the only control in the app that is not built from the token set, which
+ * is why it is the first thing anyone notices and the first thing to fix.
+ *
+ * Four decisions, each of which is the opposite of the default:
+ *
+ *   no track. The default draws a recessed channel to show the thumb's travel
+ *   range. A list has already told you where it ends -- the last row is a row,
+ *   and the pane below it is the edge. The channel only adds a second grey.
+ *
+ *   no buttons. Chromium does not draw them for overlay-less scrollbars in
+ *   WebView2, and if a future engine does, an up/down pair on a list that
+ *   scrolls by wheel is a control for a gesture nobody used.
+ *
+ *   a thin, rounded thumb. 8px of visible thumb in a 12px track: enough to grab
+ *   without aiming, thin enough that it reads as an edge rather than as a bar.
+ *
+ *   and it darkens on hover. `--scroll-thumb` is 3.3:1 against white, which is
+ *   the WCAG 1.4.11 floor for a control you need in order to tell where you
+ *   are. It is deliberately lighter than `--ink-3`: a thumb that matched the body
+ *   text would be more visible than the text, and the text is the content.
+ *
+ * Only `::-webkit-scrollbar` is used, never `scrollbar-width` /
+ * `scrollbar-color`. Setting either of those switches Chromium off its legacy
+ * pseudo-elements entirely, so writing both means the rounded, hoverable,
+ * token-driven thumb below is silently replaced by a flat grey one -- and the
+ * standard properties are the ones that actually ship. This was not a guess: a
+ * first draft set `scrollbar-color` alongside the pseudo-elements, the gutter
+ * came back 15px instead of the 12px asked for below, and the whole rule below
+ * was dead. Firefox therefore gets its own default scrollbar, which is a thin
+ * overlay on every platform worth caring about, and this is a WebView2 app.
+ */
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  /* A transparent border with `background-clip: padding-box` is how you get a
+     thumb narrower than its track without a second element. Animating
+     `border-width` on hover grows the visible thumb inside the same fixed track,
+     so nothing reflows and no layout is needed to resize it. */
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: var(--scroll-thumb);
+  background-clip: padding-box;
+  transition: background-color 120ms var(--ease);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  border-width: 1px;
+  background: var(--scroll-thumb-hover);
+  background-clip: padding-box;
+}
+
+/* The window itself never scrolls, so there is nothing to indicate -- and a
+ * track drawn over the app's own 8px grid would be the only element in the
+ * window that is not on it. */
+html::-webkit-scrollbar { width: 0; height: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *::-webkit-scrollbar-thumb { transition: none; }
+}
+
+body {
+  background: var(--paper-0);
+  color: var(--ink-1);
+  font-family: var(--font-ui);
+  font-size: var(--t-base);
+  line-height: var(--lh-base);
+  -webkit-font-smoothing: antialiased;
+  font-variant-ligatures: none;
+  user-select: none;
+  cursor: default;
+}
+
+/* Numerics never reflow. Everything numeric is monospace, fixed width. */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "zero" 1;
+  white-space: nowrap;
+}
+
+.label {
+  font-size: var(--t-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+/* ============================ shell ============================== */
+
+.shell {
+  display: grid;
+  /* One column. This used to be `1fr auto` with a docked right-hand pane in the
+     `auto` track; the track stayed in the grid long after the pane stopped being
+     a column, leaving a zero-width column that the queue's `grid-column: 1`
+     quietly depended on. The queue is the whole middle row now, which is what
+     it always was on every size where the pane had not been opened. */
+  grid-template-columns: 1fr;
+  grid-template-rows: var(--titlebar-h) 1fr var(--statusbar-h);
+  height: 100vh;
+  position: relative;
+}
+
+/* =========================== titlebar ============================= */
+
+.titlebar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--u2);
+  padding-left: var(--u2);
+  border-bottom: 1px solid var(--rule-2);
+  -webkit-app-region: drag;      /* tauri */
+}
+
+/* With no native window controls, the last thing in the titlebar is the help
+ * button, and it needs the same gutter the mark gets on the left. In the
+ * shipping app the min/max/close buttons must sit flush to the corner, so this
+ * only applies once `#winctl` has been hidden for a non-Tauri build. */
+.titlebar:has(.winctl[hidden]) { padding-right: var(--u2); }
+
+.titlebar .mark {
+  display: flex;
+  align-items: baseline;
+  gap: var(--u);
+  font-size: var(--t-base);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.titlebar .mark .ver {
+  font-size: var(--t-micro);
+  color: var(--ink-4);
+  font-weight: 500;
+}
+
+.titlebar .spacer { flex: 1; }
+
+.titlebar .livecount {
+  display: flex;
+  align-items: center;
+  gap: var(--u);
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+/* the one animated thing in the app: a 6px accent dot for in-flight work */
+.dot-live {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent-hot);
+  animation: pulse 2s var(--ease) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.35; transform: scale(0.8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot-live { animation: none; }
+}
+
+/* =========================== window ctl =========================== */
+
+.winctl { display: flex; -webkit-app-region: no-drag; }
+
+.winctl button {
+  width: 44px;
+  height: var(--titlebar-h);
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.winctl button:hover { background: var(--paper-3); color: var(--ink-1); }
+.winctl button.close:hover { background: #c42b1c; color: #fff; }
+
+/* ============================ queue =============================== */
+
+.queue-pane {
+  grid-column: 1;
+  min-width: 0;
+  /* The one that makes the list scroll. A grid item defaults to `min-height:
+     auto`, which means it refuses to be shorter than its contents, so the
+     `1fr` track below the titlebar is overridden by "eight rows are this tall"
+     and `.scroller` -- which is the only thing with `overflow-y: auto` -- is
+     handed a height equal to its own content. It then correctly reports that
+     it has nothing to scroll, while `html, body { overflow: hidden }` clips
+     the rest of the list where nobody can reach it. `min-height: 0` restores
+     the track's authority: the pane is bounded, the scroller is bounded, and
+     the list scrolls. */
+  min-height: 0;
+  /* Flex, not a fixed row template, and this is a repair rather than a style.
+     The pane has six children -- the hero, the clipboard offer, the add bar, the
+     toolbar, the column labels and the list -- of which any two may be hidden at
+     any moment. A `grid-template-rows` has to name one `auto` per *possible*
+     child and put the `1fr` in exactly the right slot, or auto-placement walks
+     the list into a different track every time one of them goes away. That is
+     exactly what happened: the list stopped being the `1fr` and became an `auto`
+     track sized to its own rows, so adding a download made it grow towards the
+     titlebar instead of scrolling, and enough rows could push a download the
+     user still needed off the top of the window.
+     Flex has no slot to be in the wrong one. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* Everything above the list is exactly as tall as its own content and nothing
+   else. `flex: none` says so explicitly, because a flex item's default
+   `flex-shrink: 1` would let a short window start crushing the toolbar and the
+   column labels before it touched the list -- and the furniture is the part you
+   need most when the window is small. */
+.queue-pane > * { flex: none; }
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--u);
+  padding: 0 var(--u2);
+  border-bottom: 1px solid var(--rule-1);
+}
+
+.tabs { display: flex; gap: 2px; }
+
+.tab {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+  padding: var(--u1) var(--u2);
+  border-radius: var(--radius);
+  cursor: default;
+}
+
+.tab:hover { background: var(--paper-2); color: var(--ink-1); }
+
+.tab[aria-selected="true"] {
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tab .n {
+  font-size: var(--t-micro);
+  color: var(--ink-4);
+  margin-left: var(--u1);
+}
+
+.tab[aria-selected="true"] .n { color: var(--accent); }
+
+.toolbar .spacer { flex: 1; }
+
+/* The expand toggle, hard against the right edge, after the filter.
+ *
+ * One button rather than an expand/minimise pair, because there is only one
+ * other state and two controls for one axis is one too many. It sits where the
+ * "or use the buttons on the right" hint used to be, which is the only part of
+ * that sentence worth keeping: a pointer to the right edge of the window. */
+.expand-btn { flex: none; }
+
+.expand-btn .exp-ico {
+  display: block;
+  flex: none;
+  transition: transform 140ms var(--ease);
+}
+
+/* Open, the same four arrows point back inwards. A control that changes shape
+ * when its state changes is one you can read without looking at the label. */
+.expand-btn[aria-expanded="true"] .exp-ico { transform: rotate(180deg); }
+
+.expand-btn[aria-expanded="true"] {
+  background: var(--paper-1);
+  border-color: var(--rule-3);
+  color: var(--ink-1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .expand-btn .exp-ico { transition: none; }
+}
+
+.ghost-btn {
+  font: inherit;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius);
+  padding: var(--u1) var(--u2);
+  cursor: default;
+  display: flex;
+  align-items: center;
+  gap: var(--u);
+}
+
+.ghost-btn:hover { border-color: var(--rule-3); background: var(--paper-1); }
+
+/* ---- buttons: every action has a visible, labelled control -----------
+ *
+ * The keyboard is an accelerator, never a requirement. Anything bound to a
+ * key also has a button a mouse can find, and every button states its
+ * shortcut as a *secondary* hint so a first-time user reads the verb first.
+ */
+
+.primary-btn {
+  font: inherit;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--paper-0);
+  background: var(--ink-1);
+  border: 1px solid var(--ink-1);
+  border-radius: var(--radius);
+  padding: var(--u1) var(--u2);
+  cursor: default;
+  display: flex;
+  align-items: center;
+  gap: var(--u);
+  /* A button whose label wraps is a button whose height is a function of how
+   * much room it was given, which in a fixed-height titlebar means it grows
+   * until it overflows the bar. This one did exactly that at 870px wide: the
+   * label needed about 117px, was handed 99px, wrapped to two lines, and took
+   * the titlebar from 40px to 50px with the top sliced off. One line, always. */
+  white-space: nowrap;
+}
+
+.primary-btn:hover { background: var(--accent); border-color: var(--accent); }
+.primary-btn.big { font-size: var(--t-base); padding: var(--u) var(--u3); }
+
+.icon-btn {
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  justify-content: center;
+  font-weight: 600;
+}
+
+/* The speed test, which gets a label where every other titlebar control gets an
+ * icon.
+ *
+ * A balance scale and a question mark are the two glyphs here, and both are
+ * guesses the user has to make. "?" is a fair guess. A scale is not: nothing
+ * about it says throughput, and the test is the one feature that is invisible
+ * until it is found. So it states its name instead, and the glyph becomes
+ * decoration rather than the entire affordance.
+ *
+ * The label is what gives way first as the window narrows -- the icon, the
+ * tooltip and the `aria-label` all survive, so the button never becomes a mystery
+ * to a pointer or to a screen reader, it just stops spelling itself out. */
+.speed-btn {
+  font-weight: 500;
+  gap: var(--u);
+}
+
+.speed-btn-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.speed-btn-label { white-space: nowrap; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .primary-btn, .ghost-btn, .acts button { transition: background 110ms var(--ease), border-color 110ms var(--ease), color 110ms var(--ease); }
+}
+
+.kbd {
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  color: var(--ink-3);
+  border: 1px solid var(--rule-2);
+  border-bottom-width: 2px;
+  border-radius: var(--radius);
+  padding: 0 5px;
+  line-height: 16px;
+  display: inline-block;
+  background: var(--paper-1);
+}
+
+/* ---- column header: this is a readout, so it is columnar ---- */
+
+.colhead {
+  display: grid;
+  grid-template-columns: 1fr 256px 92px;
+  align-items: center;
+  gap: var(--u2);
+  min-height: 32px;
+  padding: 0 var(--u2);
+  border-bottom: 1px solid var(--rule-2);
+  background: var(--paper-0);
+}
+
+.colhead .cols {
+  display: grid;
+  grid-template-columns: 96px 72px 56px;
+  gap: var(--u2);
+}
+
+.colhead .label { text-align: right; }
+.colhead .actshead { text-align: right; }
+
+/* ============================ paste bar ==========================
+ *
+ * The clipboard is the only channel between a browser and a desktop app,
+ * so this is where a copied link becomes a download. It sits above the
+ * column header rather than inside the list, because it is an offer to
+ * you and not an item you already have.
+ */
+
+.pastebar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--u2);
+  height: 56px;
+  padding: 0 var(--u2);
+  border-bottom: 1px solid var(--rule-2);
+  /* A 2px accent edge rather than a shadow: the only "it just appeared"
+     signal in the app, and it costs no elevation level. */
+  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--accent-wash);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pastebar { animation: slide-in 200ms var(--ease); }
+}
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Favicon when the site has one, monogram tile when it does not. Same box
+ * either way, so nothing moves when the icon arrives. */
+.fav {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius);
+  border: 1px solid var(--rule-2);
+  background: var(--paper-0);
+  object-fit: contain;
+  display: grid;
+  place-items: center;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  flex: none;
+}
+
+/* The bundled brand mark, in the same 20px box as a favicon or a monogram.
+ *
+ * Drawn at the same size and on the same border as the other two tiers so that
+ * a link going from "checking..." to a logo, or a monogram to a logo, never
+ * moves the text beside it. `object-fit` has no meaning for an SVG element, so
+ * the mark is scaled by its own box instead.
+ *
+ * One thing it deliberately does not do is adopt the tile's background: these
+ * marks are solid shapes on transparency and several of them (Snapchat's ghost,
+ * X's cross, Threads' knot) are near-black line art that a white fill would
+ * cut through. */
+.fav-mark {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: block;
+}
+
+.paste-text { min-width: 0; }
+
+.paste-head {
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  line-height: var(--lh-tight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.paste-head b { color: var(--ink-1); font-weight: 600; }
+.paste-busy { color: var(--ink-4); margin-left: var(--u); }
+
+.paste-path {
+  font-size: var(--t-micro);
+  color: var(--ink-3);
+  line-height: var(--lh-tight);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.paste-acts { display: flex; align-items: center; gap: var(--u); }
+
+/* The add bar. Built from the same parts as the paste bar so the two offers
+ * read as one family: a single row, an accent edge on the left, the actions on
+ * the right. The one difference is the field, because this is a question rather
+ * than a statement. */
+.addbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--u2);
+  min-height: 56px;
+  padding: var(--u) var(--u2);
+  border-bottom: 1px solid var(--rule-2);
+  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--accent-wash);
+}
+
+.addbar-glyph {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent-line);
+  background: var(--paper-0);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  font-size: var(--t-sm);
+  font-weight: 700;
+  flex: none;
+}
+
+.addbar-acts { display: flex; align-items: center; gap: var(--u); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .addbar { animation: slide-in 200ms var(--ease); }
+}
+
+/* The list, and the only scrollable thing in the pane.
+ *
+ * `overflow-x: hidden` is not tidiness: a row's progress fill and its hover
+ * state both paint outside the row, and a horizontal scrollbar here would let
+ * the user drag the whole queue sideways to reveal it.
+ *
+ * `flex: 1 1 auto` with `min-height: 0` is the flex equivalent of the grid's
+ * `1fr` track: it takes the space the pane has left over after the toolbar and
+ * the column labels, and it is allowed to be shorter than its rows, which is
+ * what lets it scroll instead of pushing the window.
+ *
+ * Once there is anything to list, this keeps `flex: 1 1 auto` but stops being the
+ * only thing competing for what is left: the home screen above it takes a height
+ * of its own, and the list gets the remainder. So the priority is inverted from
+ * what it was -- the home screen is a fixed thing the app is, and the list is the
+ * flexible one.
+ *
+ * Stability survives the inversion, which is the part worth being careful about,
+ * because it was the reason for `height: 50vh` in the first place. A queue that
+ * sizes itself to its contents moves the furniture above it: the toolbar and the
+ * column labels slide as a side effect of somebody adding a file. This does not,
+ * because nothing above it depends on the queue. The hero's height is a function
+ * of the window alone, so rows arriving cannot propagate upwards. Measured at
+ * fourteen window sizes from 1440x1200 down to 1000x445, across three adds each,
+ * the list moved zero times.
+ *
+ * What does vary is the size of the window, which is the honest answer: a list
+ * with a fixed height that is wrong for the window it is in is worse than one
+ * that follows the window.
+ *
+ * The floor lives on the hero, not here. `--list-floor` is three rows, and the
+ * hero's `max-height` is computed from it, so the list is guaranteed that much
+ * without this rule needing to know how tall a row is.
+ *
+ * The cost is the expand toggle beside the filter. Three rows is three rows, and
+ * this is what pays it back: the same queue in a box at 70% of the window, which
+ * leaves this one untouched. */
+.queue-pane:not(.pane-empty) .scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.scroller { overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0; }
+.scroller:focus { outline: none; }
+
+/* What the list says when it has nothing to show.
+ *
+ * The plain, factual sentence, as opposed to the argument the hero makes. It is
+ * inside the scroller rather than above it on purpose: it is the list reporting
+ * on itself, so it belongs to the list, and it appears and disappears with the
+ * rows rather than being furniture of the pane.
+ *
+ * Not centred in the whole height. It sits at the top, where the first row would
+ * be, because a message floating in the middle of an empty pane reads as a
+ * loading state -- something is about to appear here. Nothing is. */
+.list-empty {
+  margin: 0;
+  padding: var(--u4) var(--u2);
+  font-size: var(--t-base);
+  color: var(--ink-4);
+  text-align: center;
+}
+
+/* ============================= rows ============================== */
+
+.row {
+  display: grid;
+  grid-template-columns: var(--rail-w) 1fr 256px 92px;
+  align-items: center;
+  gap: var(--u2);
+  height: var(--row-h);
+  padding-right: var(--u2);
+  border-bottom: 1px solid var(--rule-1);
+  position: relative;
+  cursor: default;
+}
+
+.row:hover { background: var(--paper-1); }
+
+.row[aria-selected="true"] { background: var(--paper-1); }
+.row[aria-selected="true"] .name { color: var(--ink-1); }
+
+.row:focus { outline: none; }
+.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ---- event rail: a seismograph of the connection ---- */
+
+.rail {
+  position: relative;
+  height: 100%;
+  border-right: 1px solid var(--rule-1);
+}
+
+.rail .sel {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0;
+}
+
+.row[aria-selected="true"] .rail .sel { opacity: 1; }
+
+.tick {
+  position: absolute;
+  left: var(--u1);
+  right: 0;
+  height: 1px;
+  background: var(--rule-3);
+}
+
+.tick.ev-cut    { background: var(--ink-4); }
+.tick.ev-resume { background: var(--accent); left: 0; right: var(--u1); height: 2px; }
+.tick.ev-stall  { background: var(--rule-3); }
+.tick.ev-done   { background: var(--ink-1); left: 0; right: var(--u1); height: 2px; }
+.tick.ev-fail   { background: var(--bad); left: 0; right: var(--u1); height: 2px; }
+
+/* ---- body ---- */
+
+.body { min-width: 0; }
+
+.name-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--u);
+  min-width: 0;
+  margin-bottom: 5px;
+}
+
+.name {
+  font-size: var(--t-row);
+  font-weight: 600;
+  letter-spacing: -0.011em;
+  color: var(--ink-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag {
+  flex: none;
+  font-size: var(--t-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--ink-3);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius);
+  padding: 0 5px;
+  line-height: 15px;
+}
+
+.tag.live    { color: var(--accent); border-color: var(--accent-line); background: var(--accent-wash); }
+.tag.failed  { color: var(--bad); border-color: #f0c4c2; background: var(--bad-wash); }
+
+.meta {
+  font-size: var(--t-micro);
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 5px;
+  line-height: var(--lh-tight);
+}
+
+.meta .sep { color: var(--rule-3); margin: 0 5px; }
+.meta .accent { color: var(--accent); }
+
+/* ---- the byte map: the hero ---- */
+
+.map {
+  position: relative;
+  height: var(--map-h);
+  background: var(--paper-2);
+  border: 1px solid var(--rule-1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.map svg { display: block; width: 100%; height: 100%; }
+
+/* empty portion: a fine vertical hatch, so "nothing here" reads as
+ * unfilled material rather than as a shadow */
+.map .hatch {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    90deg, var(--rule-1) 0 1px, transparent 1px 4px);
+  background-position: 1px 0;
+}
+
+/* bytes that have actually landed: a solid warm tint, so the bar reads as
+ * material rather than as a coloured shadow */
+.map .fill {
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  background: var(--accent-fill);
+  border-right: 1px solid var(--accent-hot);
+}
+
+/* segment boundaries, for fragmented transfers */
+.map .mark {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--rule-3);
+}
+
+/* when the origin never told us the length, say so across the whole field
+ * rather than drawing a bar that implies a fraction we cannot compute */
+.map .note {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  background: var(--paper-0);
+  opacity: 0.85;
+}
+
+.map .seam {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+/* head: 2px accent, sits exactly on the last byte written */
+.map .head {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 2px;
+  background: var(--accent-hot);
+  animation: pulse 1.6s var(--ease) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map .head { animation: none; }
+}
+
+.map.is-unknown { border-style: dashed; }
+.map.is-unknown .hatch { background-image: repeating-linear-gradient(90deg, var(--rule-1) 0 1px, transparent 1px 6px); }
+.map.is-complete { border-color: var(--rule-2); }
+.map.is-failed  { border-color: #f0c4c2; }
+
+/* ---- numeric gutter ---- */
+
+/* ---- the numeric gutter: fixed columns, so nothing reflows ---- */
+
+.cols {
+  display: grid;
+  grid-template-columns: 96px 72px 56px;
+  gap: var(--u2);
+  text-align: right;
+}
+
+.cols .v {
+  font-size: var(--t-base);
+  color: var(--ink-1);
+  line-height: var(--lh-tight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cols .v.dim { color: var(--ink-4); }
+.cols .v.small { font-size: var(--t-sm); }
+
+/* ---- row actions: always present, quiet until wanted ----------------
+ *
+ * Hidden-until-hover is a control the user has to guess at, and invisible to
+ * anyone not already holding a mouse. So these are always on screen: dim when
+ * idle, full contrast on hover, selection, and keyboard focus.
+ */
+
+.acts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--u1);
+  opacity: 0.42;
+}
+
+.row:hover .acts,
+.row[aria-selected="true"] .acts,
+.acts:focus-within { opacity: 1; }
+
+.acts button {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.acts button:hover { background: var(--paper-0); border-color: var(--rule-2); color: var(--ink-1); }
+.acts button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.acts button.act-rm:hover { color: var(--bad); border-color: #f0c4c2; background: var(--bad-wash); }
+.acts button[disabled] { opacity: 0.28; }
+
+.ico { display: grid; place-items: center; line-height: 0; }
+.fieldbtns { display: flex; gap: var(--u); margin-top: var(--u); }
+.fieldbtns .ghost-btn { font-size: var(--t-sm); }
+
+/* ========================== empty state ==========================
+ *
+ * The one screen a new user sees, so it is the one screen that is allowed to
+ * make an argument. It does three things in order: says what the app does, gives
+ * one obvious thing to press, and shows what it works with.
+ *
+ * Centred rather than left-aligned, unlike every other block in this file. The
+ * rest of the app is a readout -- lists, columns, numbers you scan down a fixed
+ * left edge. This is not a readout, it is an offer, and an offer in the top-left
+ * corner of an empty window looks like the window failed to load. */
+
+/* The list keeps exactly one scroller (`.scroller`). The empty state has none,
+ * and it is the one screen that can be taller than a short window: its
+ * `min-height` is a floor for the constellation, and the wrapped mark cloud at
+ * narrow widths adds more on top of that. Without this the bottom of the
+ * welcome -- and the view filter under it -- would be clipped by
+ * `body { overflow: hidden }` with nothing to scroll, so the pane takes over
+ * the job, but only while the hero is what it is showing. */
+.queue-pane.pane-empty { overflow-y: auto; }
+
+.empty {
+  /* The constellation is placed against this box, so it is the coordinate
+   * space as well as the container. */
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: var(--u2);
+  /* Tall enough for the marks to sit around the headline rather than on top of
+   * it, with a floor so a very short window does not fold them into the text. */
+  min-height: clamp(520px, 70vh, 680px);
+  padding: var(--u4) clamp(var(--u3), 12vw, var(--u6)) var(--u4);
+  text-align: center;
+  /* The cloud is wider than any text here, and at a narrow window it is the
+   * thing that must wrap rather than push the pane into a horizontal scroll. */
+  min-width: 0;
+}
+
+/* ================= the hero, once there is something to do ============ */
+
+/* The welcome is for a queue that has never had anything in it, but the part of
+ * it you still need afterwards stays.
+ *
+ * The headline and the "Add a download" button are not decoration -- they are how
+ * you get to the third download without hunting for the field. The constellation
+ * is decoration, and so is the paragraph explaining what the app is to someone
+ * who has just used it. So when the queue is no longer empty those go and the
+ * heading stays, and the hero collapses from a full window to a line and a
+ * button.
+ *
+ * It is `flex: 1 1 auto` rather than a height, so it absorbs whatever the fixed
+ * list and the window chrome leave over. That is what stops the list from
+ * floating above dead page: the hero takes the slack, the list sits directly
+ * above the statusbar, and neither has a number written down that would be wrong
+ * on the next window size.
+ *
+ * The floor is zero rather than a number. This hero is the one thing in the pane
+ * allowed to be squeezed, because the list below it is the content and a headline
+ * is not: on a window too short to hold both, the heading goes and the list does
+ * not. See the media query below for where that starts. */
+/* The home screen, when there is something to download as well.
+ *
+ * It is `flex: none` now, not `flex: 1 1 auto`: the list below is the thing that
+ * gives way, because the list is the part whose size nobody can predict and the
+ * welcome is a fixed design with a known height.
+ *
+ * The `max-height` is the interesting line. `.empty` has `min-height:
+ * clamp(520px, 70vh, 680px)` for the constellation's sake, which is right when it
+ * is the only thing on screen and greedy when it is not: 70vh of a 900px window
+ * is 630px, and 630 plus 134px of chrome leaves the list 136px, under two rows.
+ * Below 640px of window it goes negative and the list stops existing.
+ *
+ * So the hero may not take the last `--list-floor` of the window. What is left is
+ * `100vh - 134px - var(--list-floor)`: the chrome, subtracted from the window,
+ * less the three rows the queue is guaranteed. At 900px that is 550, at 1200px it
+ * is 850 and the natural 680 wins, and the list lands on 216px either way. */
+.queue-pane:not(.pane-empty) > .empty {
+  flex: none;
+  min-height: 0;
+  max-height: calc(100vh - 134px - var(--list-floor));
+  overflow: hidden;
+  align-content: center;
+  padding: var(--u) var(--u4);
+}
+
+/* The repair referred to above, applied here: the gap is the gap, and the
+ * children's own top margins go. 284px of hero becomes 168px. */
+.queue-pane:not(.pane-empty) > .empty .hero-core {
+  row-gap: var(--u);
+}
+
+.queue-pane:not(.pane-empty) > .empty .hero-core > * {
+  margin-top: 0;
+}
+
+/* The ring needs a box to be arranged in, and the box's height is what supplies
+ * it -- `.hero-scatter` is absolutely positioned, so it contributes nothing to the
+ * height of its own container and collapses onto the text without this.
+ *
+ * Which is why `min-height: 0` above is safe only while the ring is hidden, and
+ * why this is scoped to the heights where it is not: 870px and up, matching the
+ * tier below that removes it. The two rules are the two halves of one decision,
+ * and they have to move together or the marks land on top of the paragraph. */
+@media (min-height: 870px) {
+  .queue-pane:not(.pane-empty) > .empty {
+    /* `min()` and not a bare clamp, because CSS resolves a minimum above a
+     * maximum by keeping the minimum -- a plain `clamp(520px, 70vh, 680px)` here
+     * silently overrode the `max-height` above it and gave the list 127px at a
+     * 900px window, which is the exact starvation the cap exists to prevent. */
+    min-height: min(clamp(520px, 70vh, 680px), calc(100vh - 134px - var(--list-floor)));
+  }
+}
+
+/* Only the constellation goes, and only on a window too short to hold it and a
+ * usable list at the same time.
+ *
+ * The heading, the paragraph, the button and the promise line all stay: that is
+ * the hero, and a hero cut down to a slogan above a button is a slogan above a
+ * button. What goes is the ring of brand marks -- 146px of decoration about sites
+ * you have just proved you can use, and by far the widest thing in the pane, which
+ * makes it also the thing most likely to put a narrow window into a horizontal
+ * scroll.
+ *
+ * "Supported sites" goes with it, and this one is not a sacrifice. It is a label
+ * for the constellation; with the constellation hidden it is a heading over
+ * nothing, which is worse than no heading. The caption goes for the same reason.
+ *
+ * 870px is arithmetic: the ring needs the 520px box that `.empty`'s `min-height`
+ * gives it, and the hero may only take `100vh - 350`, so `100vh - 350 >= 520` is
+ * the height at which both are true. Below it the marks are the first thing to
+ * go, because they are the only part of the hero that is not telling you
+ * something.
+ *
+ * The tight gap and the zeroed margins below are not a decision about the hero,
+ * they are a repair. `.hero-core` is a grid with a 16px row gap, and its children
+ * also carry `margin-top` of their own -- so between two lines there was 16px of
+ * gap plus 16px of margin, and the promise line got 16 plus 8. The spacing was
+ * being paid for twice. */
+@media (max-height: 870px) {
+  .queue-pane:not(.pane-empty) > .empty .hero-scatter,
+  .queue-pane:not(.pane-empty) > .empty .sites-shapes,
+  .queue-pane:not(.pane-empty) > .empty .sites-lead {
+    display: none;
+  }
+}
+
+/* A 31px headline is a welcome headline. Once the queue is running the heading
+ * is a label for the button under it, so it drops to the size of a section title
+ * and the two fit in a bar rather than a banner. */
+.queue-pane:not(.pane-empty) > .empty h1 {
+  font-size: var(--t-2);
+  line-height: 1.2;
+}
+
+/* Losing the rest, one piece at a time, on windows too short to hold it.
+ *
+ * Four tiers, each dropping the least load-bearing thing left, and each threshold
+ * is `2 x (what is still needed + 134px of chrome)` -- because the hero only gets
+ * half the window once the list has taken its half:
+ *
+ *   full text          168px -> holds to 518
+ *   no promise line    140px -> holds to 490
+ *   no paragraph        92px -> holds to 442
+ *   button only         68px -> holds to 418
+ *   nothing             16px
+ *
+ * The rule is `vh - 350 >= what is still needed`, and every threshold above was
+ * read off the measured layout rather than worked out: each one has zero slack at
+ * the height it names, which is why the rules are written a pixel or two higher
+ * than the arithmetic. `max-height` resolves against a fractional viewport, and a
+ * rule that fires one pixel late clips.
+ *
+ * The promise line goes first because it is the most redundant thing on screen:
+ * it says "No account. No ads.", the paragraph under the heading says "No account,
+ * no ads, no daily limit", and the statusbar says "No account · no ads · nothing
+ * leaves your computer". Three copies, and the statusbar is the one that is always
+ * on.
+ *
+ * The button goes last, and is never actually gone until 420px, because it is the
+ * only way to add a download from this screen. Below that there is no room for it
+ * and a usable list both, and at that height the list is the right thing to keep.
+ *
+ * The box stays at every tier. Removing it would move the slack from above the
+ * list to below it, which is the worse of the two: a gap under the titlebar reads
+ * as breathing room, a gap between the last row and the statusbar reads as a
+ * mistake. */
+@media (max-height: 518px) {
+  .queue-pane:not(.pane-empty) > .empty .fine {
+    display: none;
+  }
+}
+
+@media (max-height: 490px) {
+  .queue-pane:not(.pane-empty) > .empty .empty-lead {
+    display: none;
+  }
+}
+
+@media (max-height: 444px) {
+  .queue-pane:not(.pane-empty) > .empty h1 {
+    display: none;
+  }
+}
+
+@media (max-height: 420px) {
+  .queue-pane:not(.pane-empty) > .empty .hero-core {
+    display: none;
+  }
+}
+
+/* The centred column: heading, offer, promise, label. Everything the scatter is
+ * arranged around, and the only part of the empty state that is allowed to take
+ * a click. */
+.hero-core {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: var(--u2);
+  max-width: 46rem;
+  min-width: 0;
+}
+
+.empty h1 {
+  font-size: var(--t-hero);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+  margin: 0;
+  color: var(--ink-1);
+  text-wrap: balance;
+}
+
+.empty-lead {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--ink-3);
+  font-size: var(--t-base);
+  text-wrap: pretty;
+}
+
+.empty .fine {
+  margin: var(--u) 0 0;
+  font-size: var(--t-sm);
+  color: var(--ink-4);
+}
+
+/* The CTA.
+ *
+ * This is the only control on an otherwise empty window, and the whole product
+ * is one paste away from it, so it is sized like the decision it is rather than
+ * like a toolbar button: 52px tall, breathing room on both sides, and a real
+ * one-accent hover. `.primary-btn` already styles it ink-on-paper; everything
+ * here is about weight and reach.
+ *
+ * Given its own `min-width` so it does not shrink to the width of "Add a
+ * download" and look like a secondary action -- a button that fits its label
+ * exactly reads as one option among several, and there are no other options. */
+.primary-btn.cta {
+  min-height: 52px;
+  min-width: 260px;
+  justify-content: center;
+  padding: 0 var(--u4);
+  font-size: var(--t-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: var(--u2);
+  border-radius: var(--radius);
+}
+
+.primary-btn.cta:focus-visible {
+  outline: 2px solid var(--accent-hot);
+  outline-offset: 2px;
+}
+
+/* ---- the supported-sites constellation --------------------------
+ *
+ * A wrapped row by default, a deliberately placed constellation when the hero
+ * has room for one. The same tiles serve both: the positions arrive as custom
+ * properties on each tile, and the media query at the end of this section is the
+ * only thing that decides whether they are honoured. That keeps the narrow
+ * layout -- the one that has to be safe -- as plain flexbox. */
+
+.hero-scatter {
+  width: 100%;
+  min-width: 0;
+}
+
+.site-scatter {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--u1);
+  margin: var(--u2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site {
+  display: flex;
+  align-items: center;
+  gap: var(--u);
+  padding: var(--u1) var(--u2);
+  border: 1px solid var(--rule-1);
+  border-radius: 999px;
+  background: var(--paper-0);
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* One tile at a time, and only a border colour: a tile that looked pressable
+ * would be a lie, because there is nothing to press. The border is the lift. */
+.site:hover { border-color: var(--rule-2); }
+
+.site-name { font-weight: 500; }
+
+.sites-lead {
+  margin: var(--u2) 0 0;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+}
+
+/* The constellation.
+ *
+ * Only on a window that is both wide enough for marks to flank the headline and
+ * tall enough for the top and bottom of the ring to clear it. Below either
+ * threshold the flex row above is used, which cannot overlap anything.
+ *
+ * The width floor is 1000px rather than the 820px this once used: with two dozen
+ * marks the top and bottom rows are only comfortable once each pill has room to
+ * sit beside its neighbour, and 820px left a couple of px between the wider
+ * pairs. Between 820 and 1000 the wrapped cloud is both tidier and honest.
+ *
+ * `--x`/`--y` are percentages of the hero and `--r` is the tilt; all three come
+ * from the inline style `brands-ui.js` writes. The layer clips, because a rotated
+ * pill near an edge is the one thing here that could widen the page. */
+@media (min-width: 1000px) and (min-height: 620px) {
+  .hero-scatter {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: auto;
+    overflow: hidden;
+    /* The layer covers the whole hero; only the tiles themselves should take
+     * the pointer, or the CTA underneath would be unclickable. */
+    pointer-events: none;
+  }
+
+  .site-scatter {
+    display: block;
+    margin: 0;
+  }
+
+  .site {
+    position: absolute;
+    left: var(--x);
+    top: var(--y);
+    margin: 0;
+    pointer-events: auto;
+    transform: translate(-50%, -50%) rotate(var(--r));
+  }
+}
+
+.sites-shapes {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  max-width: 62ch;
+  font-size: var(--t-sm);
+  line-height: var(--lh-base);
+  color: var(--ink-4);
+  text-wrap: pretty;
+}
+
+.sites-shapes code {
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  padding: 1px 4px;
+  border: 1px solid var(--rule-1);
+  border-radius: 3px;
+  color: var(--ink-3);
+}
+
+/* The shortcut list lives in the help dialog and nowhere else. It used to be
+ * duplicated as a disclosure in the empty state, which was two mistakes at
+ * once: it contradicted the "no shortcut furniture" rule, and the copy went
+ * stale there while the dialog's copy was kept correct — the empty state still
+ * advertised a Ctrl+K palette that had been deleted. One list, in one place,
+ * reachable by a button in the toolbar. */
+
+.keys {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: var(--u1) var(--u2);
+  margin-top: var(--u2);
+  text-align: left;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.keys dt { text-align: right; }
+.keys dd { margin: 0; color: var(--ink-3); }
+.keys .glyph {
+  font-size: var(--t-base);
+  color: var(--ink-2);
+  line-height: var(--lh-tight);
+}
+
+/* ========================= detail popup ========================= */
+
+/* The details dialog. It sits on the shared `.scrim`, so it inherits the one
+ * thing that makes a popup read as a popup: the window behind it goes dark and
+ * stops being a thing you can click. That darkening is the entire cue — there
+ * is no separate "you are in a dialog" banner, and there should not be.
+ *
+ * The padding moves from the sheet onto its two halves. `.sheet` pads the frame
+ * and scrolls it, which is right for a dialog whose content is a page of prose;
+ * this one has a body that has to scroll on its own so the title and the Close
+ * button stay put while the activity log moves under them. A scrollbar that
+ * drags the Close button off the top is a Close button you cannot find.
+ *
+ * Capped at 88vh by `.sheet`, and again at 620px here, because a dialog that
+ * fills the window is a page, not an answer, and the queue behind the scrim is
+ * worth being able to glance at. */
+.sheet.detail-sheet {
+  width: 560px;
+  padding: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  max-height: min(88vh, 620px);
+}
+
+.sheet.detail-sheet .head {
+  display: flex;
+  align-items: center;
+  gap: var(--u);
+  padding: var(--u3) var(--u4) var(--u2);
+  border-bottom: 1px solid var(--rule-1);
+}
+
+.sheet.detail-sheet .head h2 { margin: 0; }
+
+.detail-sheet .detail-body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--u3) var(--u4) var(--u4);
+  min-height: 0;
+}
+
+.detail-body .field:last-child { margin-bottom: 0; }
+
+/* ---- brand marks, as used by the site cloud ----------------------
+ *
+ * 15px, and no baseline nudge. The old list hung each mark in a text gutter and
+ * needed a `margin-top` to sit it on the first line; the cloud centres its marks
+ * in a pill, so it does not. */
+
+.brand-mark {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  display: block;
+}
+
+.brand-mark--none {
+  color: var(--ink-4);
+  font-size: var(--t-micro);
+  text-align: center;
+  line-height: 15px;
+}
+
+.field { margin-bottom: var(--u3); }
+
+.field .k {
+  display: block;
+  margin-bottom: var(--u1);
+  font-size: var(--t-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+.field .val {
+  font-size: var(--t-sm);
+  color: var(--ink-1);
+  line-height: var(--lh-base);
+  word-break: break-all;
+  user-select: text;
+}
+
+.field .val.big {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: var(--lh-tight);
+}
+
+/* A key that has a hover explanation says so, quietly. */
+.field .k[data-tip] { border-bottom: 1px dotted var(--rule-3); cursor: default; }
+
+/* ---- flight recorder ---- */
+
+.recorder { border-top: 1px solid var(--rule-2); padding-top: var(--u2); }
+
+.recorder ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--t-sm);
+}
+
+.recorder li {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: var(--u2);
+  padding: var(--u1) 0;
+  border-bottom: 1px solid var(--rule-1);
+  color: var(--ink-2);
+  line-height: var(--lh-base);
+}
+
+.recorder li .t {
+  font-size: var(--t-micro);
+  color: var(--ink-4);
+  text-align: right;
+  padding-top: 1px;
+}
+
+.recorder li.k-cut    .m { color: var(--ink-3); }
+.recorder li.k-resume .m { color: var(--accent); }
+.recorder li.k-resume .m b { color: var(--accent); }
+.recorder li.k-fail   .m { color: var(--bad); }
+.recorder li b { font-weight: 600; }
+.recorder code {
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  background: var(--paper-2);
+  border: 1px solid var(--rule-1);
+  border-radius: 2px;
+  padding: 0 3px;
+}
+
+/* =========================== statusbar =========================== */
+
+.statusbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--u2);
+  padding: 0 var(--u2);
+  border-top: 1px solid var(--rule-2);
+  background: var(--paper-1);
+  font-size: var(--t-micro);
+  color: var(--ink-3);
+}
+
+.statusbar .spacer { flex: 1; }
+.statusbar .warn { color: var(--accent); }
+
+/* The one control in the strip, and the only thing in it that is not a readout:
+ * a way to get the desktop build when you are looking at the browser preview.
+ * Filled with the accent rather than outlined, because the accent fill is
+ * reserved for controls that do something when you click them. */
+.statusbar .get-software {
+  font: inherit;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  color: var(--paper-0);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 3px var(--u2);
+  line-height: 16px;
+  text-decoration: none;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
+
+.statusbar .get-software:hover { background: var(--accent-hot); border-color: var(--accent-hot); }
+.statusbar .get-software:focus-visible { outline: 2px solid var(--accent-hot); outline-offset: 2px; }
+
+/* Fixed-width text in a flex row is what makes a status bar overflow. Every
+ * item here is allowed to shrink and ellipsise, and the responsive block sheds
+ * the least important items first, so the strip degrades instead of running off
+ * the edge. Reaching these widths is not hypothetical: a 1366px display at 200%
+ * scaling gives ifami a 683px-wide window. */
+.statusbar .num {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ========================== overlays ============================ */
+
+/* A scrim holds exactly one thing: the dialog. So it centres it, full stop.
+ *
+ * This used to be `grid-template-rows: 14vh auto 1fr`, which reads like a
+ * centring scheme and is not one — it was written for a scrim that had a first
+ * child to push the dialog into the second row. There is no first child, so
+ * every dialog landed in row 1 and, because grid items stretch by default, was
+ * squashed to 14vh with the rest of its content overflowing a box far too
+ * small to hold it. At a 640px-tall window the add-download dialog was 90px
+ * tall. The dialogs are the only thing a user sees when they are in use, and
+ * all three were wrong in the same direction, which is the kind of bug that
+ * survives because nobody measures a dialog's height in a short window.
+ *
+ * `place-items: center` on a one-child grid is the honest expression of the
+ * intent. Height is handled by the sheets themselves: each one caps at 88vh and
+ * scrolls its own body, so a window too short to show the whole dialog still
+ * shows all of it.
+ */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(14, 17, 19, 0.24);
+  display: grid;
+  place-items: center;
+  padding: var(--u4);
+  z-index: 40;
+}
+
+/* ======================== expanded queue ========================= */
+
+/* A panel over the app, not a section of it.
+ *
+ * The list in the pane is sized by the window and never by its contents, so
+ * adding a download cannot change how tall it is, and it can never grow upwards
+ * until it is touching the titlebar. That is the right default and it is also a
+ * ceiling, because the home screen above it is holding its ground: on a laptop
+ * the queue gets three rows and the welcome keeps its heading and its ring of
+ * marks.
+ *
+ * So "more room" is a second, bigger window onto the same queue rather than a
+ * taller box in the page. Nothing underneath moves when it opens, which is the
+ * property that makes it safe: if it resized the pane instead, opening it would
+ * be the very thing that pushed the list into the header.
+ *
+ * This was briefly a third section under the list, taking the space the fixed
+ * list left over. Measured, that space is about 170px on a 726px window and
+ * 316px on a 900px one -- three to six rows, which is not "more room", it is the
+ * same room with a second header bolted on. So it is a panel again, because a
+ * panel you open and close is worth more than a permanently small one.
+ *
+ * Deliberately no scrim. The scrim exists to say "you are in a dialog now, the
+ * window behind is not available"; that is true of the speed test and false of
+ * this. The rest of the app staying lit and legible is what tells you it is a
+ * queue you are looking at and not somewhere else you have gone -- which is the
+ * whole reason the queue does not take the window over in the first place.
+ *
+ * 70% because a full window would be a takeover and a dialog-sized box would not
+ * be worth opening. `15vh` top leaves the titlebar and the hero's first line
+ * visible, so the app is visibly still the app and the add bar is still there.
+ *
+ * Centred with `margin-inline: auto` rather than `translateX(-50%)`, because
+ * `transform` is what the `slide-in` animation on the add bar uses and a shared
+ * property would have the two fighting. This widget animates `opacity` only. */
+.queue-float {
+  position: fixed;
+  top: 15vh;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: min(64rem, calc(100% - 2 * var(--u4)));
+  height: 70vh;
+  /* Below the scrim (40), above the page; below the snackbar (30) so a "added"
+     confirmation is never hidden behind the queue that produced it. */
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  /* Opaque, not a wash. A translucent panel over the page is a scrim that
+     forgot to say so, and it makes the rows underneath legible enough to read
+     by mistake. */
+  background: var(--paper-0);
+  border: 1px solid var(--rule-3);
+  border-radius: var(--radius);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .queue-float { animation: fade-in 120ms var(--ease); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.queue-float-head {
+  display: flex;
+  align-items: center;
+  gap: var(--u);
+  padding: var(--u) var(--u2);
+  border-bottom: 1px solid var(--rule-1);
+  flex: none;
+}
+
+.queue-float-head .label { font-weight: 600; color: var(--ink-1); }
+
+/* The column labels belong inside the widget, not above it: the labels describe
+ * the columns of the rows directly beneath them, and reusing `.colhead` keeps
+ * one grid definition for both instead of two that can drift apart. */
+.float-colhead { flex: none; }
+
+.queue-float-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+
+
+/* =========================== sheets =============================== */
+
+/* The frame the help and speed panels are built on. The add form used to be a
+ * third sheet; it is an inline bar now, so the shared field styling below is
+ * the only part of that form still doing work -- and it now does it twice. */
+.sheet {
+  width: 560px;
+  max-width: min(560px, calc(100vw - var(--u6)));
+  background: var(--paper-0);
+  border: 1px solid var(--rule-3);
+  border-radius: var(--radius);
+  padding: var(--u4) var(--u4) var(--u3);
+  /* A window too short for the whole dialog scrolls the dialog rather than
+     clipping it. The speed sheet overrides this with its own inner scroller, so
+     there is never a case where the page has two nested scrollbars and you
+     cannot tell which one to use. */
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.sheet h2 {
+  margin: 0 0 var(--u) 0;
+  font-size: var(--t-row);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.sheet input,
+.addbar input {
+  width: 100%;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  color: var(--ink-1);
+  background: var(--paper-1);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius);
+  padding: var(--u);
+  outline: none;
+  user-select: text;
+}
+
+/* The add bar sits on the accent wash, so its field is the lighter surface and
+ * keeps the same contrast against the thing behind it as the sheet's does. It
+ * also has to be allowed to shrink: the bar is a single row at every width, and
+ * a text field's default min-content width would otherwise push it sideways. */
+.addbar input { background: var(--paper-0); min-width: 0; }
+
+.sheet input:focus,
+.addbar input:focus { border-color: var(--accent); }
+.sheet .lead { margin: 0 0 var(--u) 0; font-size: var(--t-sm); color: var(--ink-3); }
+.sheet .hint { margin-top: var(--u2); font-size: var(--t-sm); color: var(--ink-3); line-height: var(--lh-base); }
+
+/* ---- help ------------------------------------------------------------ */
+
+.sheet.help {
+  width: 720px;
+  max-height: 82vh;
+  display: grid;
+  /* Auto, not the fixed 32px it used to be: the header now carries its own
+     vertical padding so the title is not six pixels from the top edge. */
+  grid-template-rows: auto 1fr;
+  padding: 0;
+}
+
+.sheet.help .head {
+  display: flex;
+  align-items: center;
+  gap: var(--u);
+  padding: var(--u2) var(--u3) var(--u);
+  border-bottom: 1px solid var(--rule-2);
+}
+
+.sheet.help h2 { margin: 0; font-size: var(--t-row); font-weight: 600; letter-spacing: -0.01em; }
+
+.help-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--u3) var(--u4);
+  padding: var(--u3);
+  overflow-y: auto;
+  min-height: 0;
+  text-align: left;
+}
+
+.help-grid p {
+  margin: var(--u) 0 0 0;
+  font-size: var(--t-sm);
+  line-height: var(--lh-base);
+  color: var(--ink-2);
+}
+
+.help-grid .keys { margin-top: var(--u); }
+.help-grid .fine { font-size: var(--t-sm); color: var(--ink-4); }
+
+/* ========================== speed test ===========================
+ *
+ * Not a speedometer. A speedometer tells you one number and hides the
+ * thing that actually matters for a downloader, which is that most
+ * servers cap a single connection. Here each connection gets its own
+ * lane drawn to a shared scale, so you watch one stream flatten out and
+ * then watch the total climb as ifami opens more. The ceiling is
+ * something you watch happen rather than something you are told.
+ */
+
+.sheet.speed {
+  width: 720px;
+  max-width: min(720px, calc(100vw - var(--u6)));
+  max-height: 88vh;
+  display: grid;
+  /* Auto, not the fixed 32px it used to be: the header now carries its own
+     vertical padding so the title is not six pixels from the top edge. */
+  grid-template-rows: auto 1fr;
+  padding: 0;
+  /* The body is the scroll region, so the header stays put. */
+  overflow: hidden;
+}
+
+.sheet.speed .head {
+  display: flex;
+  align-items: center;
+  gap: var(--u);
+  padding: var(--u2) var(--u3) var(--u);
+  border-bottom: 1px solid var(--rule-2);
+}
+
+.sheet.speed h2 { margin: 0; font-size: var(--t-row); font-weight: 600; letter-spacing: -0.01em; }
+
+/* Top padding is the generous one, the other three are tight. The sheet's own
+   top padding is zero -- the header supplies the top edge, and two stacked ones
+   read as a mistake -- so this is where the dialog earns its breathing room:
+   space above the instrument, so the trace is not pressed against the drag
+   handle and the dialog reads as a panel with something in it rather than a
+   chart thrown at a title bar. */
+.speed-body {
+  padding: var(--u2) var(--u3) var(--u3);
+  overflow-y: auto;
+  min-height: 0;
+  display: grid;
+  gap: var(--u2);
+}
+
+.speed-body .lead {
+  margin: 0;
+  font-size: var(--t-sm);
+  line-height: var(--lh-base);
+  color: var(--ink-2);
+  max-width: 62ch;
+}
+
+/* ---- the instrument --------------------------------------------- */
+
+.scope {
+  position: relative;
+  margin: 0;
+  /* Two lanes, so it is taller than a single-series plot would be. Each lane
+     still gets roughly what the old one had, and the dialog has the room: the
+     chart is the reason the dialog is open. */
+  height: 208px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius);
+  background: var(--paper-1);
+  overflow: hidden;
+}
+
+.scope svg { display: block; width: 100%; height: 100%; }
+
+.scope-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--u);
+  text-align: center;
+  color: var(--ink-4);
+  font-size: var(--t-sm);
+  pointer-events: none;
+}
+
+.scope-empty .glyph { font-size: 20px; }
+.scope-empty p { margin: 0; }
+
+
+/* ---- readout ----------------------------------------------------- */
+
+.readout {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--u3);
+}
+
+.readout .big {
+  display: flex;
+  align-items: baseline;
+  gap: var(--u);
+  /* Tabular figures so the number does not jitter sideways four times a
+     second while you are trying to read it. */
+  font-variant-numeric: tabular-nums;
+}
+
+.readout .big .num {
+  font-family: var(--font-mono);
+  font-size: 34px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink-1);
+}
+
+.readout .big .unit { font-size: var(--t-sm); color: var(--ink-3); }
+
+.readout .facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--u) var(--u3);
+  min-width: 0;
+}
+
+.readout .facts > div { min-width: 0; }
+
+.readout .facts dt {
+  font-size: var(--t-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+  font-weight: 600;
+}
+
+.readout .facts dd {
+  margin: 0;
+  font-size: var(--t-sm);
+  color: var(--ink-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.readout .facts .host { font-size: var(--t-micro); color: var(--ink-2); }
+
+.speed-body .hint { margin: 0; font-size: var(--t-micro); line-height: var(--lh-base); color: var(--ink-3); }
+.speed-body .hint:empty { display: none; }
+.speed-body .hint[data-tone="bad"] { color: var(--accent); }
+
+/* The action takes the room; the escape hatch takes what is left.
+ *
+ * `flex: 1` on the primary and a fixed basis on Stop, rather than both at
+ * `flex: 1`, because when both are live the Stop button is a secondary control
+ * that exists to be pressed once and get out of the way. Give it half the row
+ * and it reads as a co-equal choice between two ways to finish. 96px is enough
+ * for the word and wide enough to hit without aiming.
+ *
+ * They are never both visible — the markup hides one — so this is the ratio
+ * while running and 100% the rest of the time.
+ *
+ * 44px tall, and the same in every state. This is the one control in the app
+ * that somebody who has never opened a download manager is being asked to press
+ * first, and at the 30px it inherited from `.primary-btn` it read as a toolbar
+ * button -- which is why it looked small precisely when it was alone and had the
+ * whole row to itself.
+ *
+ * Deliberately *not* taller when Stop is hidden. A control that grows and shrinks
+ * as its label changes is a control that moves under the mouse, and the person
+ * who is about to press it is the person most likely to be looking at the number
+ * above rather than the button. */
+.speed-acts {
+  display: flex;
+  align-items: stretch;
+  gap: var(--u);
+  padding-top: var(--u);
+  border-top: 1px solid var(--rule-1);
+}
+
+.speed-acts > button {
+  min-height: 44px;
+  font-size: var(--t-base);
+}
+
+.speed-acts > #speed-start { flex: 1 1 auto; }
+.speed-acts > #speed-stop { flex: 0 0 96px; }
+
+/* A status, not a promise.
+ *
+ * While the test runs the primary button says what is happening and cannot be
+ * pressed, so the accent fill has to go: a filled button that does nothing when
+ * clicked is the exact thing that makes a dialog feel stuck. Flat, quiet, and
+ * the same width, so the layout does not jump when the label changes. */
+#speed-start[data-busy="true"] {
+  background: var(--paper-2);
+  border-color: var(--rule-2);
+  color: var(--ink-3);
+  cursor: default;
+}
+
+#speed-start[data-busy="true"]:hover { background: var(--paper-2); border-color: var(--rule-2); }
+#speed-start[data-busy="true"]:active { background: var(--paper-2); }
+
+/* Stop is the one control in the app that ends something, so it is the one
+ * control that is allowed to be red. Outlined rather than filled: a solid red
+ * block would out-shout the number the person opened the dialog to read, and
+ * red is already spoken for by the tone of an error message. */
+.stop-btn {
+  font: inherit;
+  font-size: var(--t-sm);
+  font-weight: 550;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius);
+  padding: var(--u);
+  cursor: pointer;
+  transition: background 110ms var(--ease), border-color 110ms var(--ease);
+}
+
+.stop-btn:hover { background: var(--accent-wash); }
+.stop-btn:active { background: var(--accent); color: var(--paper-0); }
+
+
+/* Available to screen readers, invisible on screen. The speed readout and the
+ * scope both need a text equivalent, and neither can rely on being seen. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* =========================== tooltip ============================= */
+
+#tip {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  max-width: 320px;
+  background: var(--ink-1);
+  color: var(--paper-0);
+  font-size: var(--t-micro);
+  line-height: 16px;
+  padding: var(--u1) var(--u2);
+  border-radius: var(--radius);
+  white-space: pre-line;
+}
+
+/* ========================== snackbar ============================== */
+
+/* One line of feedback, bottom-right, clear of the statusbar. It never takes
+ * focus, never blocks the list, and leaves on its own, so it is a notification
+ * rather than a dialog. A left edge in the accent (or the error hue) is the
+ * whole tone signal; there is no shadow to fight the border-based elevation. */
+.snackbar {
+  position: fixed;
+  right: var(--u2);
+  bottom: calc(var(--statusbar-h) + var(--u2));
+  z-index: 30;
+  max-width: min(16rem, calc(100vw - var(--u4)));
+  padding: var(--u) var(--u2);
+  background: var(--paper-0);
+  color: var(--ink-1);
+  border: 1px solid var(--rule-2);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: var(--t-sm);
+  line-height: var(--lh-tight);
+}
+
+.snackbar[data-tone="bad"] { border-left-color: var(--bad); }
+
+
+
+/* =========================== narrow windows ========================
+ *
+ * The byte map is the product. It is the one thing that must not be
+ * squeezed, so when the window gets tight the layout sheds things in
+ * order of how much the user needs them: first the docked pane floats
+ * goes entirely. Nothing is left to chance and nothing scrolls sideways.
+ *
+ * These widths are not hypothetical. Windows is a scaling operating
+ * system: a 1366px display at 200% hands ifami a 683px-wide window, and
+ * a 1920px one at 175% hands it 1097px. Every breakpoint below has to
+ * hold at a size a real person will actually be running.
+ *
+ * There used to be a 1080px breakpoint here, for the docked details pane to
+ * become a floating one. There is no docked pane: details is a dialog now, and
+ * a dialog is the same shape at every width, so the breakpoint that existed to
+ * rescue a layout problem no longer has a problem to rescue.
+ */
+
+@media (max-width: 920px) {
+  .colhead { grid-template-columns: 1fr 176px 92px; }
+  .row { grid-template-columns: var(--rail-w) 1fr 176px 92px; }
+  /* The two remaining figures have to fit the 176px track exactly. At the base
+     gap of 16px, 96 + 72 + 16 is 184 and the pair spills 8px into the actions
+     column; the tighter gap lands on 176 with nothing left over. The header
+     needs naming too: `.colhead .cols` is more specific than a bare `.cols`
+     and would otherwise keep its third track. */
+  .cols,
+  .colhead .cols { grid-template-columns: 96px 72px; gap: var(--u); }
+  .cols > :nth-child(3) { display: none; }
+
+  /* Disk total is the first thing to go: it is a running sum, and every row
+     already states its own size. */
+  #sb-disk { display: none; }
+}
+
+@media (max-width: 720px) {
+  .row { grid-template-columns: var(--rail-w) 1fr 92px; }
+  .row > .cols { display: none; }
+  .colhead { grid-template-columns: 1fr 92px; }
+  .colhead > .cols { display: none; }
+  .help-grid { grid-template-columns: 1fr; gap: var(--u2) var(--u3); }
+
+  /* The queue count is the next to go. The privacy line and the get-the-
+     software link stay, because those are the two things a stranger would want
+     to read if they glanced at someone else's screen. */
+  #sb-queue { display: none; }
+
+  /* Dialogs stop being centred sheets and become full-bleed panels. Below
+     this width a 560px box with 32px of padding has no room left, and a
+     dialog fighting its own container is worse than one that fills it.
+     `.sheet.detail-sheet` is in this list explicitly rather than by way of the
+     bare `.sheet`, because it sets its own `width` at higher specificity: the
+     bare selector was giving it `max-width: 100%` while leaving `width: 560px`
+     in force, and a 560px box inside a 400px window does not negotiate. It
+     overflowed the scrim and was clipped by `html, body { overflow: hidden }`,
+     so the page reported no horizontal scroll and the dialog was simply too
+     wide with nothing on screen to say so. */
+  .sheet,
+  .sheet.help,
+  .sheet.speed,
+  .sheet.detail-sheet {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    border: 0;
+  }
+  /* Full-bleed means full-bleed, so the scrim's own padding goes too — it would
+     otherwise leave a 16px gutter down each side of a panel that is pretending
+     to be the window. The old `grid-template-rows: 0 auto 1fr` that used to
+     live here was left over from the three-row centring scheme the base
+     `.scrim` no longer uses; kept, it re-introduced the row-1 stretch at
+     exactly the widths where the dialog is most likely to be in use. */
+  .scrim { padding: 0; }
+  .sheet.speed .head,
+  .sheet.detail-sheet .head,
+  .sheet.help .head { padding: var(--u2) var(--u2) var(--u); }
+  .sheet.detail-sheet .detail-body { padding: var(--u2); }
+  .help-grid,
+  .speed-body { padding: var(--u2); }
+
+  /* The speed test stacks: the big number on top, the facts under it. */
+  .readout { grid-template-columns: 1fr; gap: var(--u2); }
+  .speed-acts { flex-wrap: wrap; }
+  .scope { height: 172px; }
+}
+
+@media (max-width: 560px) {
+  /* Below this the tabs can no longer hold their counts legibly. Rather than
+     truncate "Problems 12" into "Prob…", the counts go and the tab keeps its
+     full label. */
+  .tab .n { display: none; }
+
+  .readout .facts { grid-template-columns: 1fr; }
+  .scope { height: 152px; }
+  .pastebar { grid-template-columns: auto 1fr; height: auto; padding: var(--u) var(--u2); }
+  .paste-acts { grid-column: 1 / -1; }
+
+  /* The titlebar sheds its optional text. The speed test's label goes first --
+     its icon, tooltip and `aria-label` stay, so it is still the speed test, it
+     just stops spelling itself out. The version stamp follows. The live count
+     stays: it still fits at these widths, and once the tab counts go it is the
+     only place the number of downloads in flight is stated. What is left is the
+     mark, the count, and two controls. */
+  .speed-btn-label { display: none; }
+  .titlebar .mark .ver { display: none; }
+
+  /* The expand toggle sheds its label for the same reason the speed test does:
+     its `title`, `aria-label` and `aria-expanded` all still name it, and four
+     tab labels are competing for the same 16px of toolbar. */
+  .expand-btn-label { display: none; }
+}
+
+@media (max-width: 400px) {
+  /* Four tab labels at full padding no longer fit on one line, and the tab
+     strip is the toolbar's widest child, so it is what pushes the queue pane
+     past the window. Tighter gutters keep every label whole and keep the
+     pane's min-content inside the smallest window we support. */
+  .tab { padding: var(--u1) var(--u); }
+
+  /* Give the privacy line everything the strip can spare: it is the sentence
+     that argues for the app, and at this width every pixel before its ellipsis
+     is worth having. */
+  .statusbar { gap: var(--u); padding: 0 var(--u); }
+}
+
+/* Short-and-wide is its own failure mode, and width queries never see it: a
+ * laptop with half the screen eaten by other windows leaves the queue with no
+ * height at all, and a 168px instrument is a bigger share of that than it has
+ * any right to be. */
+@media (max-height: 620px) {
+  .scope { height: 148px; }
+  .sheet.help { max-height: 92vh; }
+  .speed-body .lead { display: none; }
+}

@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # Primary gate. Anything that breaks the build, the lints, or the tests fails
+  # here, including on branches without push access.
+  verify:
+    name: Build, lint, test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --all-features
+
+      - name: Build (release)
+        run: cargo build --workspace --release
+
+  # The engine is meant to be platform-free and embeddable. If it ever starts
+  # linking a UI framework, this catches it immediately.
+  core-has-no-ui-dependencies:
+    name: ifami-core stays embeddable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build core without default features
+        run: cargo build -p ifami-core --no-default-features
+
+      - name: Test core without default features
+        run: cargo test -p ifami-core --no-default-features
+
+      - name: Forbid UI and networking frameworks in core
+        run: |
+          set -euo pipefail
+          forbidden='tauri|egui|iced|gtk|qt|dioxus|slint|leptos|wasm-bindgen|web-sys'
+          if grep -Ei "$forbidden" crates/ifami-core/Cargo.toml; then
+            echo "::error::ifami-core must not depend on a UI framework"
+            exit 1
+          fi
+          echo "ok: no UI framework in ifami-core"
+
+  # Supply-chain gates. We claim a bounded dependency surface, so these are
+  # required checks rather than advisory ones.
+  security:
+    name: cargo-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  dependency-policy:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: EmbarkStudios/cargo-deny-action@v2.0.0
+        with:
+          manifest-path: Cargo.toml
+          command: check
+
+  licences:
+    name: Licence policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: EmbarkStudios/cargo-deny-action@v2.0.0
+        with:
+          manifest-path: Cargo.toml
+          command: check licenses
+
+      # The whole project is Apache-2.0 and depends on GPLv3+ extraction tools
+      # not being linked in. This is a licence-level commitment, so it is
+      # asserted rather than documented.
+      - name: No GPL extractor dependencies
+        run: |
+          set -euo pipefail
+          if cargo tree --workspace --prefix none | grep -Ei 'youtube-dl|yt-dlp|ffmpeg|streamlink'; then
+            echo "::error::GPL/linkable extraction tool found in the dependency graph"
+            exit 1
+          fi
+          echo "ok: no GPL extraction tool in the graph"
+
+  msrv:
+    name: MSRV 1.82
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.82.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo +1.82.0 build --workspace
+      - run: cargo +1.82.0 test --workspace
+
+  secrets:
+    name: No committed secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

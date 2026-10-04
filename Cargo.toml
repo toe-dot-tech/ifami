@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = ["crates/ifami-core", "crates/ifami-cli"]
+# The Tauri shell is its own workspace on purpose. It pulls a large dependency
+# tree that shares almost nothing with the engine, and it has to be built with
+# Tauri-specific environment (WebView2, the frontend dist). Leaving it out of the
+# engine workspace keeps `cargo test` here fast and keeps a Tauri version bump
+# from being able to break the core's build.
+exclude = ["apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "Apache-2.0"
+repository = "https://github.com/toe-dot-tech/ifami"
+description = "A private, local-first media fetcher and download manager for media you have the right to download."
+authors = ["Ifami contributors"]
+
+[workspace.dependencies]
+tokio = { version = "1", default-features = false }
+tokio-util = { version = "0.7", default-features = false }
+tokio-stream = { version = "0.1", default-features = false }
+futures-core = "0.3"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+bytes = "1"
+reqwest = { version = "0.12", default-features = false } # TLS backend added per-crate
+url = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+sha2 = "0.10"
+hex = "0.4"
+tempfile = "3"
+scraper = "0.20"
+regex = "1"
+quick-xml = "0.37"
+clap = { version = "4", features = ["derive"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+# Test builds keep debug assertions so state-machine invariant checks fire in CI.
+[profile.test]
+opt-level = 1

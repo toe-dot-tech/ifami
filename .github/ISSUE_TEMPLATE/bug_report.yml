@@ -1,0 +1,110 @@
+name: Bug report
+description: Something behaves differently from what it says it does.
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before you file this, please check the support table at the top of the
+        README. Several sites are **deliberately unsupported**, and YouTube does
+        not work at all -- not partially, not on some videos. That is a product
+        decision with an ADR behind it, and a report saying "YouTube does not
+        work" will be closed with a link to the reasoning.
+
+        If your report is about a source the README already lists as unsupported,
+        the answer is in the linked ADR and there is nothing to fix.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, including the full error text.
+      placeholder: |
+        Download failed: AuthRequired (source requires sign-in)
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: input
+    id: url
+    attributes:
+      label: The exact URL or manifest
+      description: |
+        The full URL, or the manifest path. Redact any query string that carries a
+        token -- signed URLs expire and an expired one produces a confusing report.
+      placeholder: https://example.com/clip.m3u8
+    validations:
+      required: true
+
+  - type: dropdown
+    id: entrypoint
+    attributes:
+      label: Which part of the project
+      options:
+        - The desktop app
+        - The CLI (`ifami-cli`)
+        - `ifami-core` as a library
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Exact command or steps
+      description: Copy-pasteable. For the CLI, the full command line and its exit code.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Ifami version
+      description: Output of `ifami doctor`, which resolves paths and versions for you.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2 (build 26100)
+    validations:
+      required: true
+
+  - type: textarea
+    id: queue
+    attributes:
+      label: Your `ifami-queue.json`
+      description: |
+        Optional, and the single most useful thing you can attach. **Remove any
+        URLs or filenames you need to keep private first.**
+      render: json
+
+  - type: textarea
+    id: network
+    attributes:
+      label: Network detail
+      description: |
+        If this involves how bytes arrive, raw response headers or a packet capture
+        are worth considerably more than a description of the symptom.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I read the support table in the README and this is not a known-unsupported source.
+          required: true
+        - label: I searched existing issues for this.
+          required: true

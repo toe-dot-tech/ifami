@@ -1,0 +1,17 @@
+# There is no "blank issue" and no "question" template here, and that is a
+# decision rather than an oversight.
+#
+# A question tracker on a project this small becomes a support burden rather than
+# a place where decisions get recorded. Documentation questions belong in
+# discussions, where they can be answered once instead of once per person.
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/toe-dot-tech/ifami/blob/main/SECURITY.md
+    about: Report privately. Please do not open a public issue for a vulnerability.
+  - name: Support question
+    url: https://github.com/toe-dot-tech/ifami/discussions
+    about: Ask about using Ifami, or about a site you are not sure is supported.
+  - name: Scope question
+    url: https://github.com/toe-dot-tech/ifami/blob/main/docs/SCOPE.md
+    about: Whether something is in scope is answered here, with an ADR, rather than in an issue thread.
