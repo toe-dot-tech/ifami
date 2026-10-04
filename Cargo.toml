@@ -46,7 +46,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 sha2 = "0.10"
 hex = "0.4"
 tempfile = "3"
-scraper = "0.20"
+scraper = "0.27"
 regex = "1"
 # quick-xml parses DASH manifests, which come from a remote origin and are
 # therefore attacker-influenced input. 0.41 is the floor, not a preference:
